@@ -1,5 +1,5 @@
 use gpui_kit::component::{
-    ActiveTheme as _, Icon, Sizable as _,
+    ActiveTheme as _, Icon, IconName, Sizable as _,
     button::{Button, ButtonVariants as _},
     dock::{BasePanel, Panel, PanelControl, PanelEvent},
     h_flex,
@@ -8,7 +8,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::*;
 
-use crate::app::{CatalogIcon, OpenSettings};
+use crate::app::{CatalogIcon, OpenSettings, ToggleHostPanel};
 use crate::credential::CredentialPanel;
 use crate::forward::ForwardPanel;
 use crate::host::{HostPanel, import_menu_items};
@@ -37,6 +37,7 @@ pub struct Sidebar {
     hosts: Entity<HostPanel>,
     forwards: Entity<ForwardPanel>,
     credentials: Entity<CredentialPanel>,
+    dispatch: FocusHandle,
 }
 
 impl Sidebar {
@@ -44,12 +45,14 @@ impl Sidebar {
         hosts: Entity<HostPanel>,
         forwards: Entity<ForwardPanel>,
         credentials: Entity<CredentialPanel>,
+        dispatch: FocusHandle,
     ) -> Self {
         Self {
             mode: SidebarMode::default(),
             hosts,
             forwards,
             credentials,
+            dispatch,
         }
     }
 
@@ -160,6 +163,7 @@ impl Panel for Sidebar {
 
 impl Render for Sidebar {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let dispatch = self.dispatch.clone();
         let list = match self.mode {
             SidebarMode::Hosts => self.hosts.clone().into_any_element(),
             SidebarMode::Forwards => self.forwards.clone().into_any_element(),
@@ -176,6 +180,8 @@ impl Render for Sidebar {
                 // Pinned under the list, where desktop apps keep settings.
                 h_flex()
                     .p_2()
+                    .gap_2()
+                    .justify_between()
                     .border_t_1()
                     .border_color(cx.theme().sidebar_border)
                     .child(
@@ -191,6 +197,21 @@ impl Render for Sidebar {
                             )
                             .on_click(|_, window, cx| {
                                 window.dispatch_action(Box::new(OpenSettings), cx)
+                            }),
+                    )
+                    .child(
+                        Button::new("toggle-hosts")
+                            .ghost()
+                            .small()
+                            .icon(IconName::PanelLeft)
+                            .accessibility_label(t!("workspace.sidebar.hide"))
+                            .tooltip_with_action(
+                                t!("workspace.sidebar.hide"),
+                                &ToggleHostPanel,
+                                None,
+                            )
+                            .on_click(move |_, window, cx| {
+                                dispatch.dispatch_action(&ToggleHostPanel, window, cx)
                             }),
                     ),
             )

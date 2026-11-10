@@ -54,6 +54,15 @@ app.shortcut.new_group:
 app.shortcut.open_settings:
   zh-CN: 打开设置
   en: Open settings
+app.shortcut.quick_connect:
+  zh-CN: 快速连接
+  en: Find a host
+app.shortcut.split_terminal_left:
+  zh-CN: 向左分屏
+  en: Split terminal left
+app.shortcut.split_terminal_down:
+  zh-CN: 向下分屏
+  en: Split terminal down
 app.shortcut.toggle_sidebar:
   zh-CN: 显示或隐藏侧栏
   en: Show or hide sidebar

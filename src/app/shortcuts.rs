@@ -64,6 +64,9 @@ const TERMINAL: &[&str] = &[TERMINAL_KEY_CONTEXT];
 /// The find keys work from the terminal and from inside the find bar.
 const TERMINAL_AND_FIND: &[&str] = &[TERMINAL_KEY_CONTEXT, TERMINAL_FIND_KEY_CONTEXT];
 const EDITOR: &[&str] = &[EDITOR_CONTEXT];
+// Bind at the workspace, below file-list and text-field commands. A binding
+// with no context has the deepest priority, even over ancestor contexts.
+const WORKSPACE: &[&str] = &["Workspace"];
 
 /// What a shortcut is unless the user changed it. Other platforms keep Ctrl
 /// with a letter for the shell inside a terminal, so the terminal's own
@@ -85,7 +88,7 @@ macro_rules! shortcut {
 }
 
 /// The shortcuts of 设置 › 键盘快捷键, in the order the page lists them.
-pub static SHORTCUTS: [Shortcut; 30] = [
+pub static SHORTCUTS: [Shortcut; 33] = [
     shortcut!(
         "new-host",
         "app.shortcut.new_host",
@@ -103,6 +106,15 @@ pub static SHORTCUTS: [Shortcut; 30] = [
         "cmd-shift-n",
         "ctrl-shift-n",
         NewGroup
+    ),
+    shortcut!(
+        "quick-connect",
+        "app.shortcut.quick_connect",
+        General,
+        WORKSPACE,
+        "cmd-o",
+        "ctrl-shift-o",
+        QuickConnect
     ),
     shortcut!(
         "open-settings",
@@ -245,7 +257,7 @@ pub static SHORTCUTS: [Shortcut; 30] = [
         "next-tab",
         "app.shortcut.next_tab",
         Tabs,
-        &[],
+        WORKSPACE,
         "cmd-}",
         "ctrl-tab",
         NextTab
@@ -254,7 +266,7 @@ pub static SHORTCUTS: [Shortcut; 30] = [
         "previous-tab",
         "app.shortcut.previous_tab",
         Tabs,
-        &[],
+        WORKSPACE,
         "cmd-{",
         "ctrl-shift-tab",
         PreviousTab
@@ -270,6 +282,24 @@ pub static SHORTCUTS: [Shortcut; 30] = [
         system_wide: false,
         action: |digit| Box::new(SwitchToTab(digit)),
     },
+    shortcut!(
+        "split-terminal-left",
+        "app.shortcut.split_terminal_left",
+        Terminal,
+        TERMINAL_AND_FIND,
+        "cmd-d",
+        "ctrl-shift-d",
+        SplitTerminalLeft
+    ),
+    shortcut!(
+        "split-terminal-down",
+        "app.shortcut.split_terminal_down",
+        Terminal,
+        TERMINAL_AND_FIND,
+        "cmd-shift-d",
+        "ctrl-alt-shift-d",
+        SplitTerminalDown
+    ),
     shortcut!(
         "terminal-copy",
         "app.shortcut.terminal_copy",
@@ -414,14 +444,20 @@ impl Shortcut {
         self.contexts.is_empty()
     }
 
-    /// Whether it and `other` can be in effect at the same place: both
-    /// anywhere, or in a key context they share. Anywhere and a context
-    /// may share a key; the context's wins there, as ⌘K does in a terminal.
+    /// Workspace-wide commands compete with globals, while child contexts
+    /// keep their own meaning for the same keys.
+    fn is_workspace_wide(&self) -> bool {
+        self.is_global() || self.contexts == WORKSPACE
+    }
+
+    /// Whether it and `other` compete at the same scope: both
+    /// workspace-wide, or in a key context they share. A workspace command
+    /// and a terminal command may share a key, as ⌘K does in a terminal.
     /// The system's key wins everywhere.
     fn shares_scope(&self, other: &Shortcut) -> bool {
         self.system_wide
             || other.system_wide
-            || (self.is_global() && other.is_global())
+            || (self.is_workspace_wide() && other.is_workspace_wide())
             || self
                 .contexts
                 .iter()
@@ -638,10 +674,14 @@ pub fn check(
             return Err(Refusal::UsedBy(other.id));
         }
     }
-    // One that works anywhere would win over a text field's or a list's
-    // key, so those keep theirs.
-    if shortcut.is_global() {
+    // Global bindings outrank child contexts. Workspace bindings yield to
+    // those contexts, so a text field can keep ⌘→ while it switches tabs
+    // from a terminal. Unscoped built-ins must still stay reserved.
+    if shortcut.is_workspace_wide() {
         let reserved = fixed.iter().any(|binding| {
+            if !shortcut.is_global() && binding.predicate().is_some() {
+                return false;
+            }
             let [first] = binding.keystrokes() else {
                 return false;
             };
@@ -965,6 +1005,11 @@ fn file_list_key_bindings() -> Vec<KeyBinding> {
     #[cfg(not(target_os = "macos"))]
     const PRIMARY: &str = "ctrl";
 
+    #[cfg(target_os = "macos")]
+    const OPEN_DIRECTORY: &str = "cmd-shift-o";
+    #[cfg(not(target_os = "macos"))]
+    const OPEN_DIRECTORY: &str = "ctrl-o";
+
     let mut bindings = Vec::new();
     for (context, remote) in [
         (LOCAL_FILE_LIST_CONTEXT, false),
@@ -1068,9 +1113,9 @@ fn file_list_key_bindings() -> Vec<KeyBinding> {
                 ExplorerCommand::SelectAll { remote },
                 context,
             ),
-            // WinSCP's 打开目录/书签.
+            // 打开目录/书签. On macOS ⌘O opens Quick connect everywhere.
             bind(
-                &format!("{PRIMARY}-o"),
+                OPEN_DIRECTORY,
                 ExplorerCommand::OpenDirectory { remote },
                 context,
             ),
@@ -1331,7 +1376,15 @@ mod tests {
     #[test]
     fn keys_need_a_modifier_and_must_be_free_where_they_work() {
         let overrides = ShortcutOverrides::default();
-        let fixed = [KeyBinding::new(&primary("z"), NoAction, Some("Input"))];
+        let fixed = [KeyBinding::new(
+            if cfg!(target_os = "macos") {
+                "cmd-z"
+            } else {
+                "ctrl-z"
+            },
+            NoAction,
+            Some("Input"),
+        )];
         let new_host = shortcut("new-host");
         let check = |shortcut, pressed: &str| check(shortcut, &keys(pressed), &overrides, &fixed);
 
@@ -1358,6 +1411,25 @@ mod tests {
         );
         // A text field's key.
         assert_eq!(check(new_host, &primary("z")), Err(Refusal::Reserved));
+        // Workspace bindings yield to text editing, but still cannot take
+        // another workspace command's keys.
+        let quick = shortcut("quick-connect");
+        assert_eq!(
+            check(quick, new_host.default_keys()),
+            Err(Refusal::UsedBy("new-host"))
+        );
+        assert_eq!(
+            check(new_host, quick.default_keys()),
+            Err(Refusal::UsedBy("quick-connect"))
+        );
+        assert_eq!(
+            check(quick, &primary("z")),
+            Ok(keys(&primary("z")).unparse())
+        );
+        assert_eq!(
+            check(shortcut("next-tab"), &primary("right")),
+            Ok(keys(&primary("right")).unparse())
+        );
         let fixed = [KeyBinding::new("shift-home", NoAction, Some("Input"))];
         assert_eq!(
             super::check(new_host, &keys("shift-home"), &overrides, &fixed),

@@ -75,12 +75,9 @@ workspace.title_bar.forwards_running:
 workspace.title_bar.credentials:
   zh-CN: 凭据
   en: Credentials
-workspace.title_bar.hide_sidebar:
+workspace.sidebar.hide:
   zh-CN: 隐藏侧栏
   en: Hide sidebar
-workspace.title_bar.show_sidebar:
-  zh-CN: 显示侧栏
-  en: Show sidebar
 workspace.title_bar.quick_connect:
   zh-CN: 快速连接…
   en: Find a host…

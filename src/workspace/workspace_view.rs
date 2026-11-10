@@ -91,7 +91,7 @@ use super::{
     sidebar::Sidebar,
     sidebar_widths::opening_widths,
     status_bar::WorkspaceStatus,
-    title_bar::{SwitchEnd, render_sidebar_toggle, render_title_bar},
+    title_bar::render_title_bar,
     tool_sidebar::{ToolSidebar, render_tool_switch},
     tools::set_right_dock_open,
     window_state::{WindowState, window_placement},
@@ -218,6 +218,9 @@ pub struct Workspace {
     connection_tester: SharedConnectionTester,
     next_remote_terminal_id: u64,
     next_local_terminal_id: u64,
+    /// Startup waits for unlocking even when the CLI creates a workspace
+    /// in the background. Consumed once, never on subsequent unlocks.
+    startup_terminal_pending: bool,
     next_explorer_id: u64,
     /// The center tab in front: shown most recently, or, with the center
     /// split, the one the focus went into last (see `front.rs`).
@@ -250,8 +253,6 @@ pub struct Workspace {
     /// `sidebar_widths.rs`.
     pub(super) sidebar_widths: crate::settings::SidebarWidths,
     pub(super) sidebar_widths_save: Option<Task<()>>,
-    /// Where the title bar's list switch ends, for the sidebar toggle.
-    pub(super) switch_end: SwitchEnd,
     /// Where 导入 reads `~/.ssh/config` and `known_hosts`. Production only:
     /// UI tests hand in a temporary one, so nothing reads the home
     /// directory.
@@ -437,7 +438,14 @@ impl Workspace {
         });
         let credential_panel =
             cx.new(|cx| CredentialPanel::new(store.clone(), focus_handle.clone(), window, cx));
-        let sidebar = cx.new(|_| Sidebar::new(host_panel.clone(), forward_panel, credential_panel));
+        let sidebar = cx.new(|_| {
+            Sidebar::new(
+                host_panel.clone(),
+                forward_panel,
+                credential_panel,
+                focus_handle.clone(),
+            )
+        });
         let tools = cx.new(|cx| ToolSidebar::new(store.clone(), focus_handle.clone(), window, cx));
         // Start with focus in the host panel so window-level actions have a
         // dispatch path. The workspace's own handle is never focused: the
@@ -697,6 +705,7 @@ impl Workspace {
             subscriptions.push(cx.observe_in(&lock, window, |this, _, window, cx| {
                 this.sync_cli_server(cx);
                 if !crate::app_lock::is_locked(cx) {
+                    this.open_startup_terminal(window, cx);
                     for link in std::mem::take(&mut this.locked_links) {
                         this.open_link(link, window, cx);
                     }
@@ -707,7 +716,7 @@ impl Workspace {
         // arrives as events, once the workspace is there to show it.
         forwards.update(cx, |forwards, cx| forwards.start_automatic(cx));
 
-        let this = Self {
+        let mut this = Self {
             store,
             dock_area,
             skin,
@@ -738,6 +747,7 @@ impl Workspace {
             connection_tester,
             next_remote_terminal_id,
             next_local_terminal_id,
+            startup_terminal_pending: launch_settings.local_terminal.open_on_startup,
             next_explorer_id: 1,
             active_tab: None,
             broadcast: Default::default(),
@@ -754,10 +764,10 @@ impl Workspace {
             window_state_save: None,
             sidebar_widths: launch_settings.sidebar_widths,
             sidebar_widths_save: None,
-            switch_end: SwitchEnd::default(),
             ssh_dir: None,
             _subscriptions: subscriptions,
         };
+        this.open_startup_terminal(window, cx);
         if launch_settings.sidebar_collapsed {
             // The hidden host panel cannot provide a keyboard dispatch path.
             let focus = this
@@ -1376,16 +1386,14 @@ impl Workspace {
         self.open_remote_terminal(host_id, Some(copy), window, cx);
     }
 
-    fn open_remote_terminal(
+    pub(super) fn open_remote_terminal(
         &mut self,
         host_id: HostId,
         copy: Option<TerminalCopy>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
-        if self.store.read(cx).host(host_id).is_none() {
-            return;
-        }
+    ) -> Option<RemoteTerminalId> {
+        self.store.read(cx).host(host_id)?;
         let terminal_id = RemoteTerminalId(self.next_remote_terminal_id);
         self.next_remote_terminal_id += 1;
         let (panel, subscription) = new_terminal_panel(
@@ -1409,6 +1417,7 @@ impl Workspace {
         self.dock_area.update(cx, |area, cx| {
             area.add_panel_view(panel_handle(panel), DockPlacement::Center, None, window, cx);
         });
+        Some(terminal_id)
     }
 
     fn on_open_explorer(
@@ -1450,6 +1459,15 @@ impl Workspace {
         self.dock_area.update(cx, |area, cx| {
             area.add_panel_view(panel_handle(panel), DockPlacement::Center, None, window, cx);
         });
+    }
+
+    fn open_startup_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.startup_terminal_pending && !crate::app_lock::is_locked(cx) {
+            self.startup_terminal_pending = false;
+            if self.local_terminals.is_empty() {
+                self.on_new_local_terminal(&NewLocalTerminal, window, cx);
+            }
+        }
     }
 
     fn on_new_local_terminal(
@@ -2512,6 +2530,9 @@ impl Workspace {
         self.dock_area.update(cx, |area, cx| {
             area.toggle_dock(DockPlacement::Left, window, cx);
         });
+        if !self.dock_area.read(cx).is_dock_open(DockPlacement::Left) {
+            self.focus_center(window, cx);
+        }
         cx.notify();
     }
 
@@ -3024,6 +3045,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_new_temporary_connection))
             .on_action(cx.listener(Self::on_quick_connect))
             .on_action(cx.listener(Self::on_new_local_terminal))
+            .on_action(cx.listener(Self::on_split_terminal_left))
+            .on_action(cx.listener(Self::on_split_terminal_down))
             .on_action(cx.listener(Self::on_toggle_terminal_broadcast))
             .on_action(cx.listener(Self::on_set_broadcast_target))
             .on_action(cx.listener(Self::on_toggle_compose_pane))
@@ -3194,19 +3217,8 @@ impl Render for Workspace {
                 sidebar,
                 running_forwards,
                 self.updater.read(cx).snapshot().badge(),
-                &self.switch_end,
-                cx.entity_id(),
                 &self.focus_handle,
                 cx,
-            ))
-            .child(render_sidebar_toggle(
-                sidebar.is_some(),
-                self.dock_area
-                    .read(cx)
-                    .dock_size(DockPlacement::Left)
-                    .unwrap_or_default(),
-                &self.switch_end,
-                &self.focus_handle,
             ))
             .child(
                 h_flex()

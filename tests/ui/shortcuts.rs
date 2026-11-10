@@ -28,6 +28,152 @@ fn terminal(id: u64) -> Option<CenterTab> {
     Some(CenterTab::Terminal(RemoteTerminalId(id)))
 }
 
+#[gpui_kit::test]
+fn split_shortcuts_open_terminals_on_the_requested_side_and_follow_focus(cx: &mut TestAppContext) {
+    let (handle, workspace) = open_workspace(cx);
+    in_frame(cx, handle, |window, cx| {
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.press(default_keys("split-terminal-left"), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        let source = window.find(("terminal", INITIAL_WEB_TERMINAL));
+        let left = window.find(("terminal", FIRST_NEW_TERMINAL));
+        assert!(source.visible() && left.visible());
+        assert!(left.bounds().right() <= source.bounds().left());
+        assert_eq!(left.focused(), Some(true));
+        assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 2);
+        window.press(default_keys("split-terminal-down"), cx);
+    });
+    assert_eq!(active_tab(&workspace, cx), terminal(FIRST_NEW_TERMINAL + 1));
+    in_frame(cx, handle, |window, cx| {
+        let left = window.find(("terminal", FIRST_NEW_TERMINAL));
+        let below = window.find(("terminal", FIRST_NEW_TERMINAL + 1));
+        let source = window.find(("terminal", INITIAL_WEB_TERMINAL));
+        assert!(left.visible() && below.visible() && source.visible());
+        assert!(left.bounds().bottom() <= below.bounds().top());
+        assert!(below.bounds().right() <= source.bounds().left());
+        assert_eq!(below.focused(), Some(true));
+        assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 3);
+        // A split is another connection, and closes without closing its source.
+        window.press(default_keys("close-tab"), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(
+            window
+                .try_find(("terminal", FIRST_NEW_TERMINAL + 1))
+                .is_none()
+        );
+        assert!(window.find(("terminal", FIRST_NEW_TERMINAL)).visible());
+        assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 2);
+    });
+}
+
+#[gpui_kit::test]
+fn split_shortcuts_work_with_a_single_local_terminal_and_leave_other_views_alone(
+    cx: &mut TestAppContext,
+) {
+    let (handle, workspace) = open_workspace_with_store(cx, HostStore::empty());
+    in_frame(cx, handle, |window, cx| {
+        window.click("new-local-terminal", cx)
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.press(default_keys("split-terminal-left"), cx);
+    });
+    assert_eq!(
+        active_tab(&workspace, cx),
+        Some(CenterTab::LocalTerminal(LocalTerminalId(2)))
+    );
+    in_frame(cx, handle, |window, cx| {
+        let first = window.find(("local-terminal", 1u64));
+        let second = window.find(("local-terminal", 2u64));
+        assert!(first.visible() && second.visible());
+        assert!(second.bounds().right() <= first.bounds().left());
+        assert_eq!(second.focused(), Some(true));
+        window.press(default_keys("split-terminal-down"), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        let above = window.find(("local-terminal", 2u64));
+        let below = window.find(("local-terminal", 3u64));
+        assert!(above.bounds().bottom() <= below.bounds().top());
+        assert_eq!(below.focused(), Some(true));
+        window.click("open-settings", cx);
+    });
+    for id in ["split-terminal-left", "split-terminal-down"] {
+        in_frame(cx, handle, |window, cx| window.press(default_keys(id), cx));
+    }
+    assert_eq!(active_tab(&workspace, cx), Some(CenterTab::Settings));
+    cx.update(|cx| {
+        assert!(
+            workspace
+                .read(cx)
+                .local_terminal(LocalTerminalId(4))
+                .is_none()
+        )
+    });
+}
+
+#[gpui_kit::test]
+async fn quick_connect_shortcut_searches_and_opens_a_host_from_a_terminal(cx: &mut TestAppContext) {
+    let (handle, workspace) = open_workspace(cx);
+    in_frame(cx, handle, |window, cx| {
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.press(default_keys("quick-connect"), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.find("quick-connect").visible());
+        window.input("db-01", cx);
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, cx| {
+        window.render_frame(cx);
+        window.try_find(("quick-connect-host", WEB_01)).is_none()
+    })
+    .await;
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.find(("quick-connect-host", DB_01)).visible());
+        window.press("enter", cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.try_find("quick-connect").is_none());
+        assert_eq!(
+            window.find(("terminal-tab", FIRST_NEW_TERMINAL)).label(),
+            Some("db-01")
+        );
+        assert_eq!(workspace.read(cx).terminal_count(HostId(DB_01), cx), 1);
+    });
+}
+
+/// The workspace's opener and SFTP's folder dialog keep separate keys.
+#[gpui_kit::test]
+async fn quick_connect_and_sftp_directory_shortcuts_open_their_own_dialogs(
+    cx: &mut TestAppContext,
+) {
+    let (handle, _) = open_workspace_with_sftp(cx, Arc::new(FakeSftpProvider::default()));
+    open_test_explorer(cx, handle).await;
+    let directory_keys = if cfg!(target_os = "macos") {
+        "cmd-shift-o"
+    } else {
+        "ctrl-o"
+    };
+    for pane in ["local-pane", "remote-pane"] {
+        press_on_row(cx, handle, pane, "目录", directory_keys);
+        in_frame(cx, handle, |window, cx| {
+            assert!(window.find("open-directory-path").visible());
+            assert!(window.try_find("quick-connect").is_none());
+            window.press("escape", cx);
+        });
+        press_on_row(cx, handle, pane, "目录", default_keys("quick-connect"));
+        in_frame(cx, handle, |window, cx| {
+            assert!(window.find("quick-connect").visible());
+            assert!(window.try_find("open-directory-path").is_none());
+            window.press("escape", cx);
+        });
+    }
+}
+
 /// Open 设置 › 键盘快捷键, the fifth category.
 fn open_shortcuts(cx: &mut TestAppContext, handle: WindowHandle<Root>) {
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
@@ -112,12 +258,12 @@ fn a_shortcut_takes_the_keys_pressed_for_it(cx: &mut TestAppContext) {
         let recorder = window.find("shortcut-recorder-next-tab");
         assert!(recorder.visible());
         assert_eq!(recorder.focused(), Some(true));
-        window.press(&primary("j"), cx);
+        window.press(&primary("right"), cx);
     });
     in_frame(cx, handle, |window, _| {
         assert!(window.try_find("shortcut-recorder-next-tab").is_none());
     });
-    let pressed = Keystroke::parse(&primary("j")).unwrap().unparse();
+    let pressed = Keystroke::parse(&primary("right")).unwrap().unparse();
     assert_eq!(
         overrides(&workspace, cx),
         serde_json::json!({ "next-tab": pressed })
@@ -126,7 +272,16 @@ fn a_shortcut_takes_the_keys_pressed_for_it(cx: &mut TestAppContext) {
     // The new keys move on from the settings tab, the last, to the first;
     // the old ones no longer do anything.
     assert_eq!(active_tab(&workspace, cx), Some(CenterTab::Settings));
-    in_frame(cx, handle, |window, cx| window.press(&primary("j"), cx));
+    in_frame(cx, handle, |window, cx| window.press(&primary("right"), cx));
+    assert_eq!(active_tab(&workspace, cx), terminal(INITIAL_WEB_TERMINAL));
+    in_frame(cx, handle, |window, cx| {
+        window.click("host-search", cx);
+        window.input("abcd", cx);
+        window.press("home", cx);
+        window.press(&primary("right"), cx);
+        window.input("x", cx);
+        assert_eq!(window.find("host-search").value(), Some("abcdx"));
+    });
     assert_eq!(active_tab(&workspace, cx), terminal(INITIAL_WEB_TERMINAL));
     in_frame(cx, handle, |window, cx| {
         window.press(default_keys("next-tab"), cx)
@@ -170,13 +325,12 @@ fn keys_that_are_taken_or_plain_are_refused_and_escape_gives_up(cx: &mut TestApp
     in_frame(cx, handle, |window, cx| {
         window.click("shortcut-keys-next-tab", cx)
     });
-    // A plain letter, another shortcut's keys, a text field's: each said
+    // A plain letter and another shortcut's keys: each said
     // and refused, still listening. ⌘W does not close the tab meanwhile.
     for keys in [
         "j".to_string(),
         default_keys("new-host").to_string(),
         default_keys("close-tab").to_string(),
-        primary("z"),
     ] {
         in_frame(cx, handle, |window, cx| window.press(&keys, cx));
         in_frame(cx, handle, |window, _| {
@@ -187,7 +341,7 @@ fn keys_that_are_taken_or_plain_are_refused_and_escape_gives_up(cx: &mut TestApp
         });
     }
     in_frame(cx, handle, |window, cx| {
-        assert_eq!(window.notifications(cx).len(), 4);
+        assert_eq!(window.notifications(cx).len(), 3);
     });
     assert_eq!(active_tab(&workspace, cx), Some(CenterTab::Settings));
     in_frame(cx, handle, |window, cx| window.press("escape", cx));

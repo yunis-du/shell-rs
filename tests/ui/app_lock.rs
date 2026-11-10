@@ -26,6 +26,20 @@ fn open_locked_workspace_with_settings(
     Rc<Cell<usize>>,
     Entity<SettingsStore>,
 ) {
+    open_locked_workspace_with_local(cx, records, settings, fake_local_terminals())
+}
+
+fn open_locked_workspace_with_local(
+    cx: &mut TestAppContext,
+    records: Arc<dyn LockRecordStore>,
+    settings: SettingsStore,
+    local: Arc<FixedLocalTerminalTransportProvider>,
+) -> (
+    WindowHandle<Root>,
+    Entity<AppLock>,
+    Rc<Cell<usize>>,
+    Entity<SettingsStore>,
+) {
     if cx.update(|cx| AppLock::global(cx).is_none()) {
         init_app(cx);
     }
@@ -60,7 +74,7 @@ fn open_locked_workspace_with_settings(
                             ))),
                             fake_telnet_terminals(),
                             fake_serial_terminals(),
-                            fake_local_terminals(),
+                            local,
                             Arc::new(FakeSftpProvider::default()),
                             Arc::new(FakeLocalDirectory::default()),
                             Arc::new(FakeConnectionTester::default()),
@@ -371,12 +385,18 @@ fn app_lock_allows_background_cli_only_when_explicitly_enabled(cx: &mut TestAppC
         settings.update_unnotified(|settings| {
             settings.external_cli.enabled = true;
             settings.app_lock_allow_cli = true;
+            settings.local_terminal.open_on_startup = true;
         });
         settings
     };
+    let local = fake_local_terminals();
     let (restarted, restart_lock, created, _) =
-        open_locked_workspace_with_settings(cx, records.clone(), configured());
+        open_locked_workspace_with_local(cx, records.clone(), configured(), local.clone());
     assert_eq!(created.get(), 1);
+    assert!(
+        local.launches().is_empty(),
+        "startup terminal waits for unlocking"
+    );
     cx.update(|cx| assert!(restart_lock.read(cx).is_locked()));
     in_frame(cx, restarted, |window, cx| {
         assert!(window.find("app-lock-screen").visible());
@@ -390,6 +410,7 @@ fn app_lock_allows_background_cli_only_when_explicitly_enabled(cx: &mut TestAppC
         window.click("app-lock-unlock", cx);
     });
     wait_for_password(cx, &restart_lock);
+    assert_eq!(local.launches().len(), 1);
     app_settings(cx, restarted);
     in_frame(cx, restarted, |window, _| {
         assert!(window.find("settings").visible())

@@ -245,6 +245,15 @@ settings.notifications.bell_description:
 settings.local_terminal.title:
   zh-CN: 本地终端
   en: Local terminal
+settings.local_terminal.open_on_startup:
+  zh-CN: 启动时打开本地终端
+  en: Open a local terminal on startup
+settings.local_terminal.open_on_startup_description:
+  zh-CN: 启动 ShellRS 时自动打开一个本地终端；已从「项目」恢复本地终端时，不再额外打开。
+  en: Open a local terminal when ShellRS starts, unless a local terminal is already restored from Projects.
+settings.local_terminal.open_on_startup_keywords:
+  zh-CN: 启动,自动,打开,本地终端,shell
+  en: startup,automatic,open,local terminal,shell
 settings.local_terminal.shell:
   zh-CN: Shell
   en: Shell

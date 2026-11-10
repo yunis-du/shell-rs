@@ -228,7 +228,6 @@ async fn quick_connect_finds_saved_hosts_and_connects_one(cx: &mut TestAppContex
 
     in_frame(cx, handle, |window, cx| {
         let controls = [
-            "toggle-hosts",
             "title-quick-connect",
             "temporary-connection",
             "new-local-terminal",
@@ -238,13 +237,6 @@ async fn quick_connect_finds_saved_hosts_and_connects_one(cx: &mut TestAppContex
             assert!(pair[0].right() <= pair[1].left());
             assert_eq!(pair[0].size, pair[1].size);
         }
-        assert!(
-            (controls[0].left()
-                - window.find("workspace-sidebar").bounds().right()
-                - window.rem_size() * 0.5)
-                .abs()
-                <= px(1.)
-        );
         assert_eq!(
             window.find("title-quick-connect").label(),
             Some("快速连接…")
@@ -555,14 +547,11 @@ fn the_left_sidebar_keeps_its_visibility_after_reopening(cx: &mut TestAppContext
                     .is_some_and(|sidebar| sidebar.visible()),
                 shown
             );
-            assert_eq!(
-                window.find("toggle-hosts").label(),
-                Some(if shown {
-                    "隐藏侧栏"
-                } else {
-                    "显示侧栏"
-                })
-            );
+            if shown {
+                assert_eq!(window.find("toggle-hosts").label(), Some("隐藏侧栏"));
+            } else {
+                assert!(window.try_find("toggle-hosts").is_none());
+            }
         });
         let (settings, problem) = SettingsStore::load(path.clone());
         assert!(problem.is_none());
@@ -1586,28 +1575,34 @@ fn the_tool_sidebar_drags_wider_and_down_to_its_minimum(cx: &mut TestAppContext)
     );
 }
 
-/// The title-bar toggle sits just past the actual dock edge, including
-/// after a pointer resize, interface zoom and a hide/show round trip; past
-/// the list switch instead, beside a sidebar narrower than that.
+/// Hide sidebar sits beside Settings at the footer's trailing edge, through
+/// resizing and interface zoom. The title bar's host icon brings it back.
 #[gpui_kit::test]
-fn the_sidebar_toggle_tracks_the_host_panel_edge(cx: &mut TestAppContext) {
+fn the_sidebar_hides_from_its_footer_and_reopens_from_the_host_icon(cx: &mut TestAppContext) {
     use gpui_kit::component::dock::DockPlacement;
 
     let (handle, workspace) = open_workspace(cx);
     let aligned = |cx: &mut TestAppContext| {
         in_frame(cx, handle, |window, cx| {
             let button = window.find("toggle-hosts");
+            assert!(button.visible());
             let panel = window.find("workspace-sidebar").bounds();
             let gap = window.rem_size() * 0.5;
-            let switch = window.find("show-credentials").bounds();
+            let settings = window.find("open-settings").bounds();
             assert!(
-                (button.bounds().left() - panel.right().max(switch.right()) - gap).abs() <= px(1.),
+                (panel.right() - button.bounds().right() - gap).abs() <= px(1.),
                 "button {:?}, panel {:?}, gap {:?}",
                 button.bounds(),
                 panel,
                 gap
             );
-            assert!(button.bounds().left() >= window.find("show-credentials").bounds().right());
+            assert!((panel.bottom() - button.bounds().bottom() - gap).abs() <= px(1.));
+            assert_eq!(button.bounds().center().y, settings.center().y);
+            assert!(button.bounds().left() > settings.right());
+            assert_eq!(
+                button.bounds().size,
+                window.find("theme-toggle").bounds().size
+            );
             assert_eq!(button.label(), Some("隐藏侧栏"));
             let area = workspace.read(cx).dock_area().read(cx);
             assert!(area.is_dock_open(DockPlacement::Left));
@@ -1627,9 +1622,7 @@ fn the_sidebar_toggle_tracks_the_host_panel_edge(cx: &mut TestAppContext) {
 
     in_frame(cx, handle, |window, cx| window.click("toggle-hosts", cx));
     in_frame(cx, handle, |window, cx| {
-        let button = window.find("toggle-hosts");
-        assert_eq!(button.label(), Some("显示侧栏"));
-        assert_eq!(button.bounds().left(), resized.left());
+        assert!(window.try_find("toggle-hosts").is_none());
         assert!(
             !workspace
                 .read(cx)
@@ -1637,7 +1630,8 @@ fn the_sidebar_toggle_tracks_the_host_panel_edge(cx: &mut TestAppContext) {
                 .read(cx)
                 .is_dock_open(DockPlacement::Left)
         );
-        window.click("toggle-hosts", cx);
+        assert!(window.find("show-hosts").visible());
+        window.click("show-hosts", cx);
     });
     aligned(cx);
     for font_size in [12., 20., 16.] {
@@ -1656,8 +1650,7 @@ fn the_sidebar_toggle_tracks_the_host_panel_edge(cx: &mut TestAppContext) {
     cx.simulate_window_resize(handle.into(), size(px(1000.), px(700.)));
     aligned(cx);
     // Dragged back past its minimum, 100 narrower than it opened, it stops
-    // there. The toggle follows the clamped edge, or stays past the list
-    // switch where that ends later, as after the macOS window buttons.
+    // there. The button remains inside the footer at the clamped width.
     in_frame(cx, handle, |window, cx| {
         let wide = window.find("workspace-sidebar").bounds();
         let from = point(wide.right() - px(2.), wide.center().y);

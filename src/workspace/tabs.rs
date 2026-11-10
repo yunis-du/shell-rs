@@ -1,14 +1,111 @@
-//! Moving between the center's tabs from the keyboard: the next one, the
-//! previous one, or one by its position, within the current tab's group.
+//! Splitting terminals and moving between the center's tabs from the keyboard.
 
-use gpui_kit::component::dock::TabGroup;
+use gpui_kit::component::{
+    Placement,
+    dock::{DockPlacement, InsertTarget, TabGroup},
+};
 use gpui_kit::*;
 
-use crate::app::{NextTab, PreviousTab, SwitchToTab};
+use crate::app::{
+    CenterTab, NextTab, PreviousTab, SplitTerminalDown, SplitTerminalLeft, SwitchToTab,
+};
 
 use super::Workspace;
 
 impl Workspace {
+    pub(super) fn on_split_terminal_left(
+        &mut self,
+        _: &SplitTerminalLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.split_terminal(Placement::Left, window, cx);
+    }
+
+    pub(super) fn on_split_terminal_down(
+        &mut self,
+        _: &SplitTerminalDown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.split_terminal(Placement::Bottom, window, cx);
+    }
+
+    /// Keep the source terminal running and open another in its own group.
+    /// Resolve the source's node after opening: adding a panel reconciles
+    /// the dock, and the new tab need not land in the source's group.
+    fn split_terminal(
+        &mut self,
+        placement: Placement,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(source) = self.active_tab else {
+            return;
+        };
+        let Some((_, anchor)) = self.center_tab_location(source, cx) else {
+            return;
+        };
+        let opened = match source {
+            CenterTab::Terminal(id) => {
+                let Some(panel) = self.terminals.get(&id) else {
+                    return;
+                };
+                let panel = panel.read(cx);
+                let (host, copy) = (panel.host_id(), panel.copy_for_new_tab(cx));
+                let Some(id) = self.open_remote_terminal(host, Some(copy), window, cx) else {
+                    return;
+                };
+                CenterTab::Terminal(id)
+            }
+            CenterTab::LocalTerminal(_) => {
+                CenterTab::LocalTerminal(self.open_local_terminal(None, window, cx))
+            }
+            CenterTab::Explorer(_) | CenterTab::Settings | CenterTab::Editor(_) => return,
+        };
+        let Some((_, panel)) = self.center_tab_location(opened, cx) else {
+            return;
+        };
+        self.dock_area.update(cx, |area, cx| {
+            area.set_zoomed_out(window, cx);
+            if let Some(node) = area
+                .layout(DockPlacement::Center)
+                .and_then(|tree| tree.find_panel_node(anchor))
+            {
+                area.move_panel(
+                    panel,
+                    InsertTarget::Split {
+                        node,
+                        placement,
+                        size: None,
+                    },
+                    window,
+                    cx,
+                );
+            }
+        });
+        // Adding the new tab may have selected it in the source group.
+        // Keep the original terminal visible when it leaves that group.
+        if let Some((group, anchor)) = self.center_tab_location(source, cx) {
+            group.update(cx, |group, cx| {
+                if let Some(ix) = group
+                    .panels()
+                    .iter()
+                    .position(|panel| panel.panel_id(cx) == anchor)
+                {
+                    group.select_tab(ix, window, cx);
+                }
+            });
+        }
+        // Dock activation is deferred. Focus the new terminal after the
+        // layout settles so repeated splits follow the new pane.
+        cx.defer_in(window, move |this, window, cx| {
+            if let Some(focus) = this.tab_focus_handle(opened, cx) {
+                window.focus(&focus, cx);
+            }
+        });
+    }
+
     pub(super) fn on_next_tab(&mut self, _: &NextTab, window: &mut Window, cx: &mut Context<Self>) {
         self.step_tab(1, window, cx);
     }

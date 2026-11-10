@@ -443,16 +443,38 @@ fn terminal_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
     ]
 }
 
-/// 终端 → 本地终端: the program a local terminal runs, and whether 项目's
-/// terminals keep their output. The shell's row stacks, so a path with its
-/// arguments has the page's width.
+/// 终端 → 本地终端: startup, shell, and saved output.
 fn local_terminal_group(panel: &SettingsPanel) -> SettingGroup {
     let (editor, reset) = (panel.local_shell.clone(), panel.local_shell.clone());
     let store = panel.store.clone();
     let (reader, writer) = (panel.store.clone(), panel.store.clone());
+    let (startup_reader, startup_writer) = (panel.store.clone(), panel.store.clone());
     SettingGroup::new()
         .title(t!("settings.local_terminal.title"))
         .items([
+            SettingItem::new(
+                t!("settings.local_terminal.open_on_startup"),
+                SettingField::switch(
+                    move |cx| {
+                        startup_reader
+                            .read(cx)
+                            .settings()
+                            .local_terminal
+                            .open_on_startup
+                    },
+                    move |on, cx| {
+                        startup_writer.update(cx, |store, cx| {
+                            store
+                                .update(|settings| settings.local_terminal.open_on_startup = on, cx)
+                        });
+                    },
+                )
+                .default_value(false),
+            )
+            .description(t!("settings.local_terminal.open_on_startup_description"))
+            .keywords(keywords(t!(
+                "settings.local_terminal.open_on_startup_keywords"
+            ))),
             SettingItem::new(
                 t!("settings.local_terminal.shell"),
                 SettingField::render(move |options, _, cx| local_shell_field(&editor, options, cx))

@@ -793,7 +793,7 @@ async fn sftp_path_label_opens_ancestors_and_the_open_directory_dialog(cx: &mut 
 
     // WinSCP's 打开目录 key works from the list.
     #[cfg(target_os = "macos")]
-    let open_directory = "cmd-o";
+    let open_directory = "cmd-shift-o";
     #[cfg(not(target_os = "macos"))]
     let open_directory = "ctrl-o";
     press_on_row(cx, handle, "remote-pane", "目录", open_directory);

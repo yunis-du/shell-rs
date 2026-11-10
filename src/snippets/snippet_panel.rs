@@ -201,6 +201,10 @@ impl SnippetPanel {
                         div()
                             .id("snippets-summary")
                             .test_support()
+                            .on_mouse_down(MouseButton::Left, {
+                                let focus = self.focus_handle.clone();
+                                move |_, window, cx| focus.focus(window, cx)
+                            })
                             .aria_label(summary.clone())
                             .flex_1()
                             .min_w_0()

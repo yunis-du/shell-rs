@@ -291,7 +291,7 @@ async fn a_telnet_host_is_connected_to_without_saving_it(cx: &mut TestAppContext
     let telnet = fake_telnet_terminals();
     let (handle, workspace) = open_workspace_with_protocols(
         cx,
-        HostStore::empty(),
+        HostStore::empty().with_secrets(Arc::new(InMemorySecretStore::default())),
         Arc::new(FakeTerminalFactory::default()),
         telnet.clone(),
         fake_serial_terminals(),
@@ -309,6 +309,7 @@ async fn a_telnet_host_is_connected_to_without_saving_it(cx: &mut TestAppContext
     });
     in_frame(cx, handle, |window, cx| {
         window.click("host-telnet-password", cx);
+        assert_eq!(window.find("host-telnet-password").focused(), Some(true));
         window.input("secret", cx);
         window.click("commit", cx);
     });

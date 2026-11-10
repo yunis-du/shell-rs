@@ -1,8 +1,5 @@
-use std::cell::Cell;
-use std::rc::Rc;
-
 use gpui_kit::component::{
-    ActiveTheme as _, IconName, Selectable as _, Sizable as _, TITLE_BAR_HEIGHT, TitleBar,
+    ActiveTheme as _, IconName, Selectable as _, Sizable as _, TitleBar,
     button::{Button, ButtonGroup, ButtonVariants as _},
     h_flex,
 };
@@ -11,7 +8,7 @@ use gpui_kit::*;
 
 use crate::app::{
     CatalogIcon, NewLocalTerminal, NewTemporaryConnection, QuickConnect, ShowCredentials,
-    ShowForwards, ShowHosts, ShowUpdate, ToggleHostPanel, ToggleTheme,
+    ShowForwards, ShowHosts, ShowUpdate, ToggleTheme,
 };
 use crate::i18n::t;
 use crate::shared::tinted;
@@ -28,14 +25,10 @@ use super::sidebar::SidebarMode;
 /// `forwards` is how many port forwards are running; `update` is the
 /// newer ShellRS waiting to be installed, when there is one.
 ///
-/// `switch_end` learns where the list switch ends, and `view` is redrawn
-/// when that moves.
 pub fn render_title_bar(
     sidebar: Option<SidebarMode>,
     forwards: usize,
     update: Option<UpdateBadge>,
-    switch_end: &SwitchEnd,
-    view: EntityId,
     target: &FocusHandle,
     cx: &App,
 ) -> TitleBar {
@@ -67,7 +60,6 @@ pub fn render_title_bar(
                     div()
                         .relative()
                         .on_mouse_down(MouseButton::Left, no_drag)
-                        .child(switch_end.measure(view))
                         .child(
                             ButtonGroup::new("sidebar-mode")
                                 .ghost()
@@ -129,7 +121,11 @@ pub fn render_title_bar(
                         .ghost()
                         .small()
                         .icon(IconName::Search)
-                        .tooltip(t!("workspace.title_bar.quick_connect"))
+                        .tooltip_with_action(
+                            t!("workspace.title_bar.quick_connect"),
+                            &QuickConnect,
+                            None,
+                        )
                         .accessibility_label(t!("workspace.title_bar.quick_connect"))
                         .on_click(move |_, window, cx| {
                             quick.dispatch_action(&QuickConnect, window, cx)
@@ -197,72 +193,5 @@ pub fn render_title_bar(
                             theme.dispatch_action(&ToggleTheme, window, cx)
                         }),
                 ),
-        )
-}
-
-/// Where the title bar's list switch ends, as the last frame drew it: past
-/// a narrow sidebar's edge on macOS, after the window buttons.
-#[derive(Clone, Default)]
-pub(super) struct SwitchEnd(Rc<Cell<Pixels>>);
-
-impl SwitchEnd {
-    /// Fills the switch's box to learn its right edge as it is drawn, and
-    /// redraws `view` when that moves.
-    fn measure(&self, view: EntityId) -> impl IntoElement + use<> {
-        let end = self.0.clone();
-        canvas(
-            move |bounds, window, _| {
-                if end.get() != bounds.right() {
-                    end.set(bounds.right());
-                    window.on_next_frame(move |_, cx| cx.notify(view));
-                }
-            },
-            |_, _, _, _| {},
-        )
-        .absolute()
-        .top_0()
-        .left_0()
-        .size_full()
-    }
-}
-
-/// Position against the workspace, whose left edge is also the dock's,
-/// rather than against TitleBar's platform-dependent traffic-light inset:
-/// just past the sidebar's edge, or past the list switch when the sidebar
-/// is narrower than that. The closed dock keeps its width, so the reopen
-/// button stays put.
-pub(super) fn render_sidebar_toggle(
-    open: bool,
-    sidebar_width: Pixels,
-    switch_end: &SwitchEnd,
-    target: &FocusHandle,
-) -> impl IntoElement {
-    let target = target.clone();
-    let label = if open {
-        t!("workspace.title_bar.hide_sidebar")
-    } else {
-        t!("workspace.title_bar.show_sidebar")
-    };
-    h_flex()
-        .absolute()
-        .top_0()
-        .left(sidebar_width.max(switch_end.0.get()))
-        .h(TITLE_BAR_HEIGHT)
-        .pl_2()
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .child(
-            Button::new("toggle-hosts")
-                .ghost()
-                .small()
-                .icon(if open {
-                    IconName::PanelLeft
-                } else {
-                    IconName::PanelLeftOpen
-                })
-                .tooltip(label.clone())
-                .accessibility_label(label)
-                .on_click(move |_, window, cx| {
-                    target.dispatch_action(&ToggleHostPanel, window, cx)
-                }),
         )
 }

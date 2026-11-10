@@ -44,6 +44,10 @@ gpui_kit::actions!(
         ImportKnownHosts,
         /// Open a new local login-shell terminal.
         NewLocalTerminal,
+        /// Open another terminal to the left of the focused terminal.
+        SplitTerminalLeft,
+        /// Open another terminal below the focused terminal.
+        SplitTerminalDown,
         /// Start 命令广播, which turns terminal tab marks into checkboxes,
         /// or end it.
         ToggleTerminalBroadcast,

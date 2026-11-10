@@ -375,6 +375,8 @@ fn readable_rules<'de, D: Deserializer<'de>>(
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalTerminalSettings {
+    /// Open a local terminal on startup when none is restored from Projects.
+    pub open_on_startup: bool,
     /// The program new and restarted local terminals run, a path or a
     /// command with any arguments, as typed. `None` is the system's default
     /// shell, found anew each time.
@@ -387,6 +389,7 @@ pub struct LocalTerminalSettings {
 impl Default for LocalTerminalSettings {
     fn default() -> Self {
         Self {
+            open_on_startup: false,
             shell: None,
             keep_output: true,
         }
@@ -933,6 +936,22 @@ mod tests {
             };
             assert_eq!(settings.normalized().transfers.parallel, kept);
         }
+    }
+
+    #[test]
+    fn startup_terminal_is_opt_in_and_round_trips() {
+        let settings: AppSettings = serde_json::from_str("{}").unwrap();
+        assert!(!settings.local_terminal.open_on_startup);
+        let settings: AppSettings = serde_json::from_str(
+            r#"{"local_terminal":{"open_on_startup":true,"shell":"/bin/zsh"}}"#,
+        )
+        .unwrap();
+        assert!(settings.local_terminal.open_on_startup);
+        let saved = serde_json::to_string(&settings).unwrap();
+        assert_eq!(
+            serde_json::from_str::<AppSettings>(&saved).unwrap(),
+            settings
+        );
     }
 
     #[test]

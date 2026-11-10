@@ -876,6 +876,11 @@ async fn a_snippet_beside_a_local_terminal_types_into_it(cx: &mut TestAppContext
     } else {
         "\x05\x15git status"
     };
+    // The transport consumes the command on its own worker thread.
+    cx.wait_for(handle.into(), Duration::from_secs(2), |_, _| {
+        factory.written_text().len() >= before + typed.len()
+    })
+    .await;
     assert_eq!(&factory.written_text()[before..], typed);
     in_frame(cx, handle, |window, _| {
         assert_eq!(window.find(("local-terminal", 1_u64)).focused(), Some(true));

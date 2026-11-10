@@ -22,19 +22,29 @@ fn open_workspace_with_local_terminals(
     local: Arc<FixedLocalTerminalTransportProvider>,
     window_size: gpui_kit::Size<gpui_kit::Pixels>,
 ) -> (WindowHandle<Root>, Entity<Workspace>) {
+    open_local_workspace(cx, local, window_size, HostStore::seed(), settings_store())
+}
+
+fn open_local_workspace(
+    cx: &mut TestAppContext,
+    local: Arc<FixedLocalTerminalTransportProvider>,
+    window_size: gpui_kit::Size<gpui_kit::Pixels>,
+    store: HostStore,
+    settings: SettingsStore,
+) -> (WindowHandle<Root>, Entity<Workspace>) {
     init_app(cx);
     // Dialogs still, as in every fixture: see `open_workspace_with_tester`.
     cx.update(|cx| cx.set_reduce_motion(true));
     let mut workspace = None;
     let handle = cx.open_window(window_size, |window, cx| {
-        let store = cx.new(|_| HostStore::seed());
+        let store = cx.new(|_| store);
         let remote = Arc::new(FixedRemoteTerminalTransportProvider::new(Arc::new(
             FakeTerminalFactory::default(),
         )));
         let view = cx.new(|cx| {
             Workspace::new_with_services(
                 store,
-                cx.new(|_| settings_store()),
+                cx.new(|_| settings),
                 remote,
                 fake_telnet_terminals(),
                 fake_serial_terminals(),
@@ -51,6 +61,75 @@ fn open_workspace_with_local_terminals(
         Root::new(view, window, cx)
     });
     (handle, workspace.expect("workspace created"))
+}
+
+#[gpui_kit::test]
+fn startup_terminal_setting_opens_one_terminal_and_preserves_restored_tabs(
+    cx: &mut TestAppContext,
+) {
+    let local = fake_local_terminals();
+    let (handle, workspace) = open_local_workspace(
+        cx,
+        local.clone(),
+        size(px(1280.), px(2400.)),
+        HostStore::empty(),
+        settings_store(),
+    );
+    assert!(local.launches().is_empty());
+    in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
+    in_frame(cx, handle, |window, cx| {
+        window.within("settings").click("0-1", cx)
+    });
+    in_frame(cx, handle, |window, cx| {
+        let mut page = window.within("settings");
+        let mut group = page.within("group-4");
+        let mut item = group.within("item-0");
+        assert_eq!(item.find("check").checked(), Some(false));
+        item.click("check", cx);
+    });
+    assert!(
+        local.launches().is_empty(),
+        "the switch takes effect at startup"
+    );
+    let saved = cx.update(|cx| {
+        let settings = workspace.read(cx).settings().read(cx).settings();
+        assert!(settings.local_terminal.open_on_startup);
+        serde_json::to_string(&settings).unwrap()
+    });
+    for restored in [false, true] {
+        let mut settings = settings_store();
+        settings.update_unnotified(|settings| *settings = serde_json::from_str(&saved).unwrap());
+        let mut store = HostStore::empty();
+        if restored {
+            let id = store
+                .insert_saved_terminal_unnotified(None, Some("/code/project".into()))
+                .unwrap();
+            store.set_saved_terminal_tabs_unnotified(vec![shellrs::host::SavedTerminalTab {
+                terminal: id,
+                front: true,
+            }]);
+        }
+        let local = fake_local_terminals();
+        let (handle, workspace) = open_local_workspace(
+            cx,
+            local.clone(),
+            size(px(1280.), px(800.)),
+            store,
+            settings,
+        );
+        in_frame(cx, handle, |window, _| {
+            assert!(window.find(("local-terminal", 1_u64)).visible());
+        });
+        assert_eq!(local.launches().len(), 1);
+        cx.update(|cx| {
+            assert!(
+                workspace
+                    .read(cx)
+                    .local_terminal(LocalTerminalId(2))
+                    .is_none()
+            )
+        });
+    }
 }
 
 #[gpui_kit::test]
