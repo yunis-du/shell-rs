@@ -57,6 +57,7 @@ gpui-kit = { version = "0.6.1", features = [
     "tree-sitter-yaml",
 ] }
 alacritty_terminal = "0.26"
+encoding_rs = "0.8"
 anyhow = "1"
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "zeroize"] }
 subtle = "2"

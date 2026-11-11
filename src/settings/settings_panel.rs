@@ -510,6 +510,7 @@ fn local_terminal_group(panel: &SettingsPanel) -> SettingGroup {
 fn interaction_group(store: &Entity<SettingsStore>) -> SettingGroup {
     let (reader, writer) = (store.clone(), store.clone());
     let (cursor_reader, cursor_writer) = (store.clone(), store.clone());
+    let (double_reader, double_writer) = (store.clone(), store.clone());
     SettingGroup::new()
         .title(t!("settings.interaction.title"))
         .items([
@@ -535,6 +536,28 @@ fn interaction_group(store: &Entity<SettingsStore>) -> SettingGroup {
                 .default_value(false),
             )
             .description(t!("settings.interaction.copy_on_select_description")),
+            SettingItem::new(
+                t!("settings.interaction.copy_on_double_click"),
+                SettingField::switch(
+                    move |cx| {
+                        double_reader
+                            .read(cx)
+                            .settings()
+                            .terminal_interaction
+                            .copy_on_double_click
+                    },
+                    move |on, cx| {
+                        double_writer.update(cx, |store, cx| {
+                            store.update(
+                                |settings| settings.terminal_interaction.copy_on_double_click = on,
+                                cx,
+                            )
+                        });
+                    },
+                )
+                .default_value(true),
+            )
+            .description(t!("settings.interaction.copy_on_double_click_description")),
             SettingItem::new(
                 t!("settings.interaction.right_click"),
                 choice_field(
@@ -570,6 +593,15 @@ fn interaction_group(store: &Entity<SettingsStore>) -> SettingGroup {
                 )
                 .default_value(true),
             ),
+            SettingItem::new(
+                t!("settings.interaction.encoding"),
+                choice_field(
+                    store,
+                    |settings| settings.terminal_interaction.encoding,
+                    |settings, encoding| settings.terminal_interaction.encoding = encoding,
+                ),
+            )
+            .description(t!("settings.interaction.encoding_description")),
         ])
 }
 
@@ -1790,18 +1822,20 @@ fn choice_field<T: Choice>(
         .map(|choice| (choice.key().into(), choice.label()))
         .collect();
     let (reader, writer) = (store.clone(), store.clone());
-    SettingField::dropdown(
-        options,
-        move |cx| read(&reader.read(cx).settings()).key().into(),
-        move |key: SharedString, cx| {
-            if let Some(choice) = T::from_key(&key) {
-                writer.update(cx, |store, cx| {
-                    store.update(|settings| write(settings, choice), cx)
-                });
-            }
-        },
-    )
-    .default_value(read(&AppSettings::default()).key())
+    let read_value = move |cx: &App| read(&reader.read(cx).settings()).key().into();
+    let write_value = move |key: SharedString, cx: &mut App| {
+        if let Some(choice) = T::from_key(&key) {
+            writer.update(cx, |store, cx| {
+                store.update(|settings| write(settings, choice), cx)
+            });
+        }
+    };
+    let field = if T::ALL.len() > 8 {
+        SettingField::scrollable_dropdown(options, read_value, write_value)
+    } else {
+        SettingField::dropdown(options, read_value, write_value)
+    };
+    field.default_value(read(&AppSettings::default()).key())
 }
 
 /// The settings tab's commands, shared by its context menu and the tab bar's

@@ -7,6 +7,8 @@
 
 use portable_pty::CommandBuilder;
 
+use super::TerminalEncoding;
+
 /// The variables the packaging leaves behind.
 ///
 /// `ARGV0` is the one that bites: zsh takes it for a special parameter
@@ -29,6 +31,17 @@ pub const LAUNCHER_VARS: &[&str] = &["ARGV0", "APPIMAGE", "APPDIR", "OWD"];
 pub fn strip_launcher_vars(command: &mut CommandBuilder) {
     for name in LAUNCHER_VARS {
         command.env_remove(name);
+    }
+}
+
+/// Start macOS shells with the matching character locale where available.
+/// Leave other locale categories and an explicit LC_ALL alone.
+/// Linux locale names and availability depend on the installed locales.
+pub(super) fn set_character_locale(command: &mut CommandBuilder, encoding: TerminalEncoding) {
+    if cfg!(target_os = "macos")
+        && let Some(locale) = encoding.macos_locale()
+    {
+        command.env("LC_CTYPE", locale);
     }
 }
 

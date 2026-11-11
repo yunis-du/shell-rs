@@ -115,6 +115,36 @@ settings.terminal.preview_keywords:
 settings.interaction.title:
   zh-CN: 终端交互
   en: Interaction
+settings.interaction.encoding:
+  zh-CN: 字符编码
+  en: Character encoding
+settings.interaction.encoding_description:
+  zh-CN: 终端输入和输出使用的编码。新开、重启或重连终端后生效。
+  en: The encoding for terminal input and output. Applies when you open, restart, or reconnect a terminal.
+settings.encoding.unicode:
+  zh-CN: Unicode (%{encoding})
+  en: Unicode (%{encoding})
+settings.encoding.gb18030:
+  zh-CN: 中文 (GB 18030)
+  en: Chinese (GB 18030)
+settings.encoding.gbk:
+  zh-CN: 中文 (GBK)
+  en: Chinese (GBK)
+settings.encoding.iso2022_cn:
+  zh-CN: 中文 (ISO 2022-CN)
+  en: Chinese (ISO 2022-CN)
+settings.encoding.big5:
+  zh-CN: 繁体中文 (Big5)
+  en: Traditional Chinese (Big5)
+settings.encoding.shift_jis:
+  zh-CN: 日文 (Shift_JIS)
+  en: Japanese (Shift_JIS)
+settings.interaction.copy_on_double_click:
+  zh-CN: 双击选中复制
+  en: Copy on double-click
+settings.interaction.copy_on_double_click_description:
+  zh-CN: 双击选中的词自动复制到剪贴板。
+  en: Automatically copy the word you select by double-clicking.
 settings.interaction.copy_on_select:
   zh-CN: 选中复制
   en: Copy on select

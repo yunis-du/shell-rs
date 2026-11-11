@@ -144,7 +144,7 @@ impl TerminalStatus {
     }
 }
 
-/// 终端 → 终端交互: mouse behavior and the default cursor. A
+/// 终端 → 终端交互: mouse behavior, cursor defaults and character encoding. A
 /// global, set from the settings, because terminals do not depend on them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -153,21 +153,27 @@ pub struct TerminalInteraction {
     /// 选中复制: what a selection takes in goes to the clipboard once the
     /// mouse lets go. Off until the user turns it on.
     pub copy_on_select: bool,
+    /// 双击选中复制: copy the word selected by a double-click.
+    pub copy_on_double_click: bool,
     /// 右键行为.
     pub right_click: RightClick,
     /// The default shape; a terminal program can request its own.
     pub cursor_style: TerminalCursorStyle,
     /// Blink by default, unless a program chooses otherwise.
     pub cursor_blinking: bool,
+    /// The character encoding new connections use for terminal text.
+    pub encoding: super::TerminalEncoding,
 }
 
 impl Default for TerminalInteraction {
     fn default() -> Self {
         Self {
             copy_on_select: false,
+            copy_on_double_click: true,
             right_click: RightClick::default(),
             cursor_style: TerminalCursorStyle::default(),
             cursor_blinking: true,
+            encoding: super::TerminalEncoding::default(),
         }
     }
 }

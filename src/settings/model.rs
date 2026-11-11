@@ -12,7 +12,8 @@ use crate::i18n::t;
 use crate::sftp::{DEFAULT_PARALLEL_TRANSFERS, PARALLEL_TRANSFERS_RANGE};
 use crate::terminal::{
     DEFAULT_FONT_SIZE, DEFAULT_LINE_HEIGHT, FONT_SIZE_RANGE, HighlightRule, LINE_HEIGHT_RANGE,
-    RightClick, TerminalCursorStyle, TerminalInteraction, TerminalTheme, default_rules,
+    RightClick, TerminalCursorStyle, TerminalEncoding, TerminalInteraction, TerminalTheme,
+    default_rules,
 };
 use crate::update::Channel;
 
@@ -526,6 +527,61 @@ impl Choice for RightClick {
             Self::Paste => t!("settings.right_click.paste"),
             Self::Menu => t!("settings.right_click.menu"),
         }
+    }
+}
+
+impl Choice for TerminalEncoding {
+    const ALL: &'static [Self] = &[
+        Self::Utf16,
+        Self::Utf16Be,
+        Self::Utf16Le,
+        Self::Utf32,
+        Self::Utf32Be,
+        Self::Utf32Le,
+        Self::Utf7,
+        Self::Utf8,
+        Self::Gb18030,
+        Self::Gbk,
+        Self::Iso2022Cn,
+        Self::Big5,
+        Self::ShiftJis,
+    ];
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Utf16 => "utf16",
+            Self::Utf16Be => "utf16_be",
+            Self::Utf16Le => "utf16_le",
+            Self::Utf32 => "utf32",
+            Self::Utf32Be => "utf32_be",
+            Self::Utf32Le => "utf32_le",
+            Self::Utf7 => "utf7",
+            Self::Utf8 => "utf8",
+            Self::Gb18030 => "gb18030",
+            Self::Gbk => "gbk",
+            Self::Iso2022Cn => "iso2022_cn",
+            Self::Big5 => "big5",
+            Self::ShiftJis => "shift_jis",
+        }
+    }
+
+    fn label(self) -> SharedString {
+        let unicode = match self {
+            Self::Utf16 => "UTF-16",
+            Self::Utf16Be => "UTF-16BE",
+            Self::Utf16Le => "UTF-16LE",
+            Self::Utf32 => "UTF-32",
+            Self::Utf32Be => "UTF-32BE",
+            Self::Utf32Le => "UTF-32LE",
+            Self::Utf7 => "UTF-7",
+            Self::Utf8 => "UTF-8",
+            Self::Gb18030 => return t!("settings.encoding.gb18030"),
+            Self::Gbk => return t!("settings.encoding.gbk"),
+            Self::Iso2022Cn => return t!("settings.encoding.iso2022_cn"),
+            Self::Big5 => return t!("settings.encoding.big5"),
+            Self::ShiftJis => return t!("settings.encoding.shift_jis"),
+        };
+        t!("settings.encoding.unicode", encoding = unicode)
     }
 }
 

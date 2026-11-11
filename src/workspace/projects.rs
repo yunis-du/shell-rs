@@ -428,6 +428,7 @@ pub(super) fn local_launch(
 ) -> LocalLaunch {
     let shell = LocalShell::new(settings.local_terminal.shell.as_deref().unwrap_or_default());
     LocalLaunch {
+        encoding: settings.terminal_interaction.encoding,
         directory: saved
             .and_then(|terminal| terminal.directory.as_deref())
             .map(PathBuf::from),

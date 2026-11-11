@@ -192,6 +192,8 @@ pub enum BusyReason {
     NotStarted,
     /// A ZMODEM transfer has the terminal.
     Transfer,
+    /// The wire encoding cannot carry the raw CLI markers.
+    Encoding,
 }
 
 /// How long each step of a run may take.

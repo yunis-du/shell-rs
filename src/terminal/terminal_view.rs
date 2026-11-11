@@ -284,8 +284,8 @@ pub struct TerminalView {
     viewport: Option<TerminalViewport>,
     ime_cursor_bounds: Option<Bounds<Pixels>>,
     requested_size: TerminalSize,
-    /// A selection drag is under way.
-    selecting: bool,
+    /// The gesture that started the selection, until the pointer is released.
+    selecting: Option<SelectionType>,
     /// A selection drag held past the top or the bottom: how many lines
     /// each step scrolls, up when positive, and where across the edge row
     /// the selection ends. The steps run while it is set.
@@ -346,7 +346,7 @@ impl TerminalView {
             cx.on_blur(&focus_handle, window, |this, _, cx| {
                 this.focused = false;
                 this.cursor_visible = false;
-                this.selecting = false;
+                this.selecting = None;
                 this.engine.read(cx).set_focused(false);
                 cx.notify();
             }),
@@ -395,7 +395,7 @@ impl TerminalView {
             viewport: None,
             ime_cursor_bounds: None,
             requested_size: TerminalSize::DEFAULT,
-            selecting: false,
+            selecting: None,
             edge_scroll: None,
             edge_scroll_task: None,
             scroll_accumulator: ScrollAccumulator::default(),
@@ -472,7 +472,7 @@ impl TerminalView {
         self.marked_text.clear();
         self.marked_selection = 0..0;
         self.ime_cursor_bounds = None;
-        self.selecting = false;
+        self.selecting = None;
         self.scroll_accumulator.reset();
         self.context_menu = None;
         self.context_menu_subscription = None;
@@ -566,7 +566,7 @@ impl TerminalView {
     /// Select all the text, the scrollback with it. With 选中复制 on, it
     /// goes to the clipboard, as what the mouse selects does.
     pub fn select_all(&mut self, cx: &mut Context<Self>) {
-        self.selecting = false;
+        self.selecting = None;
         self.engine.update(cx, |engine, cx| engine.select_all(cx));
         if TerminalInteraction::current(cx).copy_on_select {
             self.copy_selection(cx);
@@ -594,7 +594,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> Result<(), SharedString> {
         self.engine.read(cx).enter_command(command, run, replace)?;
-        self.selecting = false;
+        self.selecting = None;
         self.scroll_accumulator.reset();
         self.cursor_visible = true;
         cx.notify();
@@ -624,7 +624,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> Result<(), SharedString> {
         self.engine.read(cx).upload_dropped(files)?;
-        self.selecting = false;
+        self.selecting = None;
         self.scroll_accumulator.reset();
         self.cursor_visible = true;
         cx.notify();
@@ -633,7 +633,7 @@ impl TerminalView {
 
     /// Clear the screen and the scrollback, keeping the prompt line.
     pub fn clear(&mut self, cx: &mut Context<Self>) {
-        self.selecting = false;
+        self.selecting = None;
         self.scroll_accumulator.reset();
         self.engine
             .update(cx, |engine, cx| engine.clear_keeping_prompt(cx));
@@ -804,7 +804,7 @@ impl TerminalView {
             for _ in 0..lines.unsigned_abs().min(12) {
                 self.engine.read(cx).write(sequence.to_vec());
             }
-        } else if self.selecting {
+        } else if self.selecting.is_some() {
             // Dragging, the selection follows the pointer into the text
             // that scrolls under it.
             self.engine.update(cx, |engine, cx| {
@@ -823,7 +823,7 @@ impl TerminalView {
         selection_type: SelectionType,
         cx: &mut Context<Self>,
     ) {
-        self.selecting = true;
+        self.selecting = Some(selection_type);
         self.engine.update(cx, |engine, cx| {
             engine.start_selection(point, side, selection_type, cx)
         });
@@ -866,7 +866,8 @@ impl TerminalView {
 
     /// One step of a drag held past the edge; whether to go on.
     fn step_edge_scroll(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some((lines, column, side)) = self.edge_scroll.filter(|_| self.selecting) else {
+        let Some((lines, column, side)) = self.edge_scroll.filter(|_| self.selecting.is_some())
+        else {
             self.stop_edge_scroll();
             return false;
         };
@@ -883,12 +884,12 @@ impl TerminalView {
         self.edge_scroll_task = None;
     }
 
-    /// The mouse let go of a selection. With 选中复制 on, what it took in
-    /// goes to the clipboard; a click that selected nothing leaves it be.
+    /// Copy on release if either setting covers this gesture.
     fn finish_selection(&mut self, cx: &mut Context<Self>) {
-        self.selecting = false;
+        let double_click = self.selecting.take() == Some(SelectionType::Semantic);
         self.stop_edge_scroll();
-        if TerminalInteraction::current(cx).copy_on_select {
+        let interaction = TerminalInteraction::current(cx);
+        if interaction.copy_on_select || (double_click && interaction.copy_on_double_click) {
             self.copy_selection(cx);
         }
     }
@@ -994,18 +995,21 @@ impl TerminalView {
             return false;
         }
         let engine = self.engine.read(cx);
-        match input {
+        let sent = match input {
             TerminalInput::Key(key) => {
                 let Some(bytes) = encode_key(key, engine.mode()) else {
                     return false;
                 };
-                engine.send_user_input(bytes);
+                engine.send_user_input(bytes)
             }
             TerminalInput::Bytes(bytes) => engine.send_user_input(bytes.clone()),
             TerminalInput::Paste(text) => engine.paste(text),
+        };
+        if !sent {
+            return false;
         }
         self.hover_link(None, cx);
-        self.selecting = false;
+        self.selecting = None;
         self.scroll_accumulator.reset();
         self.cursor_visible = true;
         cx.notify();
@@ -1013,7 +1017,7 @@ impl TerminalView {
     }
 
     fn prepare_for_user_input(&mut self, cx: &mut Context<Self>) {
-        self.selecting = false;
+        self.selecting = None;
         self.scroll_accumulator.reset();
         self.cursor_visible = true;
         self.engine.read(cx).prepare_for_user_input();
@@ -1927,7 +1931,7 @@ impl Element for TerminalElement {
 
         let view = self.view.clone();
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
-            if !phase.capture() || !view.read(cx).selecting {
+            if !phase.capture() || view.read(cx).selecting.is_none() {
                 return;
             }
             if event.dragging() {
@@ -1942,7 +1946,10 @@ impl Element for TerminalElement {
 
         let view = self.view.clone();
         window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
-            if event.button != MouseButton::Left || !phase.capture() || !view.read(cx).selecting {
+            if event.button != MouseButton::Left
+                || !phase.capture()
+                || view.read(cx).selecting.is_none()
+            {
                 return;
             }
             let (point, side) = viewport.grid_point(event.position);

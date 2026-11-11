@@ -26,6 +26,7 @@ use crate::host::HostOs;
 use crate::i18n::t;
 
 use super::directory::ReportedDirectory;
+use super::encoding::{TerminalDecoder, TerminalEncoding};
 use super::highlight::{
     HighlightColor, KeywordHit, LineWatcher, SharedHighlights, TerminalHighlights,
     advance_watching, current,
@@ -391,15 +392,26 @@ impl TerminalEngine {
     /// Send bytes originating from the user. Unlike protocol writes such as
     /// terminal query responses and focus reports, interactive input returns
     /// to the live screen and retires the previous selection first.
-    pub fn send_user_input(&self, bytes: impl Into<Vec<u8>>) {
+    pub fn send_user_input(&self, bytes: impl Into<Vec<u8>>) -> bool {
         if !self.lifecycle.accepts_input() {
-            return;
+            return false;
         }
+        let bytes = bytes.into();
+        let interrupt = bytes.contains(&0x03);
+        if self.runtime.intercept_transfer_input(interrupt) {
+            return true;
+        }
+        let Some(bytes) = self.runtime.encoding.encode_input(bytes) else {
+            return false;
+        };
 
         let mut term = self.runtime.term.lock();
         prepare_term_for_user_input(&mut term);
         drop(term);
-        self.runtime.write(bytes.into());
+        if !self.runtime.intercept_transfer_input(interrupt) {
+            self.runtime.write_wire(bytes);
+        }
+        true
     }
 
     pub fn prepare_for_user_input(&self) {
@@ -411,8 +423,8 @@ impl TerminalEngine {
         prepare_term_for_user_input(&mut term);
     }
 
-    pub fn paste(&self, text: &str) {
-        self.send_user_input(encode_paste(text, self.mode()));
+    pub fn paste(&self, text: &str) -> bool {
+        self.send_user_input(encode_paste(text, self.mode()))
     }
 
     /// Put `command` on the shell's input line, as a paste, and with `run`
@@ -428,8 +440,9 @@ impl TerminalEngine {
         if !self.lifecycle.accepts_input() {
             return Err(t!("terminal.command.not_connected"));
         }
-        self.send_user_input(encode_command(command, run, replace, self.mode())?);
-        Ok(())
+        self.send_user_input(encode_command(command, run, replace, self.mode())?)
+            .then_some(())
+            .ok_or_else(|| t!("terminal.command.unmappable"))
     }
 
     pub fn resize(&mut self, size: TerminalSize, cx: &mut gpui_kit::Context<Self>) {
@@ -655,6 +668,10 @@ impl TerminalEngine {
         if self.runtime.transferring() {
             return Err(RunFailure::Busy(BusyReason::Transfer));
         }
+        // The CLI's shell probe and output markers operate on raw bytes.
+        if self.runtime.encoding.uses_wide_units() {
+            return Err(RunFailure::Busy(BusyReason::Encoding));
+        }
         {
             let mut slot = lock_run(&self.runtime.run);
             if slot.as_ref().is_some_and(RunHandle::is_active) {
@@ -876,6 +893,7 @@ pub enum TerminalEvent {
 struct TerminalRuntime {
     term: Arc<FairMutex<AlacrittyTerm>>,
     commands: mpsc::Sender<TerminalTransportCommand>,
+    encoding: TerminalEncoding,
     size: Arc<Mutex<TerminalSize>>,
     wakeup_pending: Arc<AtomicBool>,
     /// The `exec --terminal` run this connection carries, which the parser
@@ -905,6 +923,7 @@ impl TerminalRuntime {
         let proxy = TerminalEventProxy {
             generation,
             commands: commands.clone(),
+            encoding: interaction.encoding,
             ui_events: ui_events.clone(),
             size: shared_size.clone(),
             wakeup_pending: wakeup_pending.clone(),
@@ -921,6 +940,7 @@ impl TerminalRuntime {
         let mut parser = Parser {
             term: term.clone(),
             processor: Processor::new(),
+            decoder: TerminalDecoder::new(interaction.encoding),
             notices: NoticeScanner::default(),
             watcher: LineWatcher::new(current(&highlights)),
             highlights,
@@ -950,7 +970,10 @@ impl TerminalRuntime {
                             parser.transfer(fed);
                             continue;
                         }
-                        Received::Closed => break,
+                        Received::Closed => {
+                            parser.output(&[], true);
+                            break;
+                        }
                         Received::Overdue => {
                             {
                                 let mut term = parser.term.lock();
@@ -1010,6 +1033,7 @@ impl TerminalRuntime {
                         TerminalTransportEvent::Exited { code, signal } => {
                             let fed = parser.zmodem.disconnected();
                             parser.transfer(fed);
+                            parser.output(&[], true);
                             let description = signal
                                 .as_deref()
                                 .map(|signal| {
@@ -1034,6 +1058,7 @@ impl TerminalRuntime {
                         TerminalTransportEvent::Failed(error) => {
                             let fed = parser.zmodem.disconnected();
                             parser.transfer(fed);
+                            parser.output(&[], true);
                             append_message_with_processor(
                                 &parser.term,
                                 &mut parser.processor,
@@ -1064,6 +1089,7 @@ impl TerminalRuntime {
         Self {
             term,
             commands,
+            encoding: interaction.encoding,
             size: shared_size,
             wakeup_pending,
             run,
@@ -1073,13 +1099,23 @@ impl TerminalRuntime {
     }
 
     fn write(&self, bytes: Vec<u8>) {
+        if !self.intercept_transfer_input(bytes.contains(&0x03)) {
+            self.write_wire(self.encoding.encode_protocol(bytes));
+        }
+    }
+
+    fn intercept_transfer_input(&self, interrupt: bool) -> bool {
         if self.transferring() {
             // Keys would land in the transfer: only Ctrl+C means anything.
-            if bytes.contains(&0x03) {
+            if interrupt {
                 let _ = self.zmodem.try_send(ZmodemControl::Cancel);
             }
-            return;
+            return true;
         }
+        false
+    }
+
+    fn write_wire(&self, bytes: Vec<u8>) {
         let _ = self.commands.send(TerminalTransportCommand::Write(bytes));
     }
 
@@ -1143,6 +1179,7 @@ impl Drop for TerminalRuntime {
 pub struct TerminalEventProxy {
     generation: u64,
     commands: mpsc::Sender<TerminalTransportCommand>,
+    encoding: TerminalEncoding,
     ui_events: mpsc::Sender<TerminalUiEvent>,
     size: Arc<Mutex<TerminalSize>>,
     wakeup_pending: Arc<AtomicBool>,
@@ -1236,6 +1273,7 @@ impl TerminalEventProxy {
                 }
             }
         }
+        let bytes = self.encoding.encode_protocol(bytes);
         let _ = self.commands.send(TerminalTransportCommand::Write(bytes));
     }
 
@@ -1358,6 +1396,7 @@ fn earliest(one: Option<Instant>, other: Option<Instant>) -> Option<Instant> {
 struct Parser {
     term: Arc<FairMutex<AlacrittyTerm>>,
     processor: Processor,
+    decoder: TerminalDecoder,
     /// Alacritty drops the notifications programs ask for.
     notices: NoticeScanner,
     watcher: LineWatcher,
@@ -1376,7 +1415,7 @@ impl Parser {
         let Fed { shown, wire, ask } = fed;
         for shown in shown {
             match shown {
-                Shown::Output(bytes) => self.output(&bytes),
+                Shown::Output(bytes) => self.output(&bytes, false),
                 Shown::Note(note) => {
                     let mut term = self.term.lock();
                     end_overdue_sync(&mut self.processor, &mut term);
@@ -1400,7 +1439,14 @@ impl Parser {
 
     /// Output for the emulator, and for what reads it beside: 关键字高亮,
     /// the programs' notifications and folders, an `exec --terminal` run.
-    fn output(&mut self, bytes: &[u8]) {
+    fn output(&mut self, wire: &[u8], last: bool) {
+        let bytes = self.decoder.decode(wire, last);
+        if bytes.is_empty() {
+            if !wire.is_empty() {
+                feed_run(&self.run, wire);
+            }
+            return;
+        }
         self.watcher.sync(current(&self.highlights));
         // The lines are only read under the lock; the rules match them
         // once it is let go.
@@ -1427,7 +1473,10 @@ impl Parser {
         if let Some(directory) = self.notices.take_directory() {
             self.proxy.send(TerminalUiEventKind::Directory(directory));
         }
-        feed_run(&self.run, bytes);
+        // The CLI's raw output and its ASCII markers use the wire bytes.
+        if !wire.is_empty() {
+            feed_run(&self.run, wire);
+        }
     }
 }
 
@@ -1600,6 +1649,7 @@ mod tests {
         let proxy = TerminalEventProxy {
             generation: 1,
             commands,
+            encoding: TerminalEncoding::Utf8,
             ui_events,
             size: Arc::new(Mutex::new(size)),
             wakeup_pending: Arc::new(AtomicBool::new(false)),
@@ -2258,6 +2308,13 @@ mod tests {
 
     /// A terminal whose transport plays `script`.
     fn run_script(script: Vec<TerminalTransportEvent>) -> TerminalRuntime {
+        run_script_with_encoding(script, TerminalEncoding::Utf8)
+    }
+
+    fn run_script_with_encoding(
+        script: Vec<TerminalTransportEvent>,
+        encoding: TerminalEncoding,
+    ) -> TerminalRuntime {
         let (ui_events, _) = mpsc::channel();
         TerminalRuntime::start(
             1,
@@ -2268,8 +2325,30 @@ mod tests {
             Arc::new(Mutex::new(TerminalTheme::default_for(
                 gpui_kit::component::ThemeMode::Light,
             ))),
-            TerminalInteraction::default(),
+            TerminalInteraction {
+                encoding,
+                ..TerminalInteraction::default()
+            },
         )
+    }
+
+    #[test]
+    fn legacy_output_decodes_across_reads_and_kept_text_stays_utf8() {
+        let runtime = run_script_with_encoding(
+            vec![
+                TerminalTransportEvent::Replay("上次\r\n".as_bytes().to_vec()),
+                TerminalTransportEvent::Output(b"\x1b[31m\xd6".to_vec()),
+                TerminalTransportEvent::Output(b"\xd0\xce\xc4\x1b[0m done".to_vec()),
+            ],
+            TerminalEncoding::Gb18030,
+        );
+        let screen = screen_once_it_shows(&runtime, "done");
+        assert!(screen.starts_with("上次\n中文 done"), "{screen}");
+        assert_eq!(
+            runtime.term.lock().grid()[Line(1)][Column(0)].fg,
+            Color::Named(alacritty_terminal::vte::ansi::NamedColor::Red)
+        );
+        runtime.shutdown();
     }
 
     /// The screen's text once it holds `text`, or what it holds after two
@@ -2397,7 +2476,9 @@ mod tests {
     /// A terminal 60 by 6 on a [`PipedTransport`]: the runtime, what the
     /// test sends as the transport, the commands the transport gets, and
     /// what the parser thread tells the UI.
-    fn piped() -> (
+    fn piped(
+        encoding: TerminalEncoding,
+    ) -> (
         TerminalRuntime,
         mpsc::Sender<TerminalTransportEvent>,
         mpsc::Receiver<TerminalTransportCommand>,
@@ -2418,10 +2499,30 @@ mod tests {
             Arc::new(Mutex::new(TerminalTheme::default_for(
                 gpui_kit::component::ThemeMode::Light,
             ))),
-            TerminalInteraction::default(),
+            TerminalInteraction {
+                encoding,
+                ..TerminalInteraction::default()
+            },
         );
         events.send(TerminalTransportEvent::Started).unwrap();
         (runtime, events, commands, ui)
+    }
+
+    #[test]
+    fn wide_terminal_replies_use_the_selected_byte_order() {
+        let (runtime, events, commands, _) = piped(TerminalEncoding::Utf16Le);
+        // One two-column character, then the cursor position query. Split a
+        // code unit to also exercise the decoder through the parser thread.
+        for bytes in [b"\x2d".as_slice(), b"\x4e\x1b\0[\x006\0n\0"] {
+            events
+                .send(TerminalTransportEvent::Output(bytes.to_vec()))
+                .unwrap();
+        }
+        let reply = commands.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(matches!(reply, TerminalTransportCommand::Write(bytes)
+            if bytes == b"\x1b\0[\x001\0;\x003\0R\0"));
+        assert!(screen_text(&runtime).starts_with('中'));
+        runtime.shutdown();
     }
 
     fn screen_text(runtime: &TerminalRuntime) -> String {
@@ -2470,7 +2571,7 @@ mod tests {
 
     #[test]
     fn sz_asks_for_a_folder_and_keeps_the_keys_but_ctrl_c() {
-        let (runtime, events, commands, ui) = piped();
+        let (runtime, events, commands, ui) = piped(TerminalEncoding::Utf8);
         events
             .send(TerminalTransportEvent::Output(
                 [b"$ sz notes.txt\r\n".as_slice(), SZ_STARTS].concat(),
@@ -2509,7 +2610,7 @@ mod tests {
     #[test]
     fn a_folder_chosen_starts_the_download_and_a_lost_connection_ends_it() {
         let folder = tempfile::tempdir().unwrap();
-        let (runtime, events, commands, ui) = piped();
+        let (runtime, events, commands, ui) = piped(TerminalEncoding::Utf8);
         events
             .send(TerminalTransportEvent::Output(SZ_STARTS.to_vec()))
             .unwrap();

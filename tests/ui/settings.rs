@@ -587,7 +587,7 @@ fn terminal_cursor_settings_apply_to_open_and_restarted_terminals(cx: &mut TestA
         let mut group = page.within("group-1");
         assert_eq!(
             group
-                .within("item-2")
+                .within("item-3")
                 .within("terminal-cursor-style")
                 .find(0usize)
                 .checked(),
@@ -595,7 +595,7 @@ fn terminal_cursor_settings_apply_to_open_and_restarted_terminals(cx: &mut TestA
         );
         let bounds = [0usize, 1, 2].map(|ix| {
             let item = group
-                .within("item-2")
+                .within("item-3")
                 .within("terminal-cursor-style")
                 .find(ix);
             assert!(item.visible());
@@ -607,7 +607,7 @@ fn terminal_cursor_settings_apply_to_open_and_restarted_terminals(cx: &mut TestA
         }
         assert!(bounds[0].right() <= bounds[1].left());
         assert!(bounds[1].right() <= bounds[2].left());
-        let mut row = group.within("item-3");
+        let mut row = group.within("item-4");
         assert!(row.find("check").visible());
         assert_eq!(row.find("check").checked(), Some(true));
         row.click("check", cx);

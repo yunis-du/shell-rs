@@ -623,7 +623,7 @@ async fn copy_on_select_puts_what_the_mouse_selects_on_the_clipboard(cx: &mut Te
     })
     .await;
 
-    // 终端交互 is the second group of 终端: 选中复制, off, then 右键行为.
+    // 终端交互 is the second group of 终端: 选中复制 is off.
     in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
     in_frame(cx, handle, |window, cx| {
         window.within("settings").click("0-1", cx)
@@ -632,7 +632,7 @@ async fn copy_on_select_puts_what_the_mouse_selects_on_the_clipboard(cx: &mut Te
         let mut settings = window.within("settings");
         let mut group = settings.within("group-1");
         assert_eq!(group.within("item-0").find("check").checked(), Some(false));
-        assert_eq!(group.within("item-1").find("btn").label(), Some("显示菜单"));
+        assert_eq!(group.within("item-2").find("btn").label(), Some("显示菜单"));
         group.within("item-0").click("check", cx);
     });
     cx.update(|cx| {
@@ -665,6 +665,156 @@ async fn copy_on_select_puts_what_the_mouse_selects_on_the_clipboard(cx: &mut Te
             Some("run:1$ alpha.txt 会议纪要.md".into())
         );
     });
+}
+
+#[gpui_kit::test]
+async fn double_click_copies_a_word_by_default_and_can_be_turned_off(cx: &mut TestAppContext) {
+    use gpui_kit::{MouseDownEvent, MouseUpEvent};
+
+    let (handle, _, factory) = terminal_printing(cx, "alpha beta\r\n", "alpha beta").await;
+    let double_click = |cx: &mut TestAppContext, expected| {
+        in_frame(cx, handle, |window, cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string("sentinel".into()));
+            let position = cell_center(window, &factory, 2, 1);
+            let button = MouseButton::Left;
+            let modifiers = gpui_kit::Modifiers::none();
+            click_at(window, position, modifiers, cx);
+            window.dispatch_event(
+                MouseDownEvent {
+                    button,
+                    position,
+                    modifiers,
+                    click_count: 2,
+                    first_mouse: false,
+                }
+                .to_platform_input(),
+                cx,
+            );
+            window.dispatch_event(
+                MouseUpEvent {
+                    button,
+                    position,
+                    modifiers,
+                    click_count: 2,
+                }
+                .to_platform_input(),
+                cx,
+            );
+            assert_eq!(
+                cx.read_from_clipboard()
+                    .and_then(|item| item.text())
+                    .as_deref(),
+                Some(expected)
+            );
+        });
+    };
+    double_click(cx, "alpha");
+    in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
+    in_frame(cx, handle, |window, cx| {
+        window.within("settings").click("0-1", cx)
+    });
+    in_frame(cx, handle, |window, cx| {
+        let mut settings = window.within("settings");
+        let mut group = settings.within("group-1");
+        let mut toggle = group.within("item-1");
+        assert_eq!(toggle.find("check").checked(), Some(true));
+        toggle.click("check", cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.click(("local-terminal-tab", 1_u64), cx)
+    });
+    double_click(cx, "sentinel");
+}
+
+#[gpui_kit::test]
+async fn terminal_encoding_selection_applies_to_input_after_restart(cx: &mut TestAppContext) {
+    use shellrs::app::RestartLocalTerminal;
+    use shellrs::terminal::TerminalLifecycle;
+
+    let factory = Arc::new(FakeTerminalFactory::default());
+    let (handle, workspace) = open_running_local_terminal(cx, factory.clone()).await;
+    in_frame(cx, handle, |window, cx| window.click("open-settings", cx));
+    in_frame(cx, handle, |window, cx| {
+        window.within("settings").click("0-1", cx)
+    });
+    in_frame(cx, handle, |window, cx| {
+        let position = window.find("terminal-font-preview").bounds().center();
+        window.dispatch_event(
+            gpui_kit::ScrollWheelEvent {
+                position,
+                delta: gpui_kit::ScrollDelta::Pixels(point(px(0.), px(-520.))),
+                modifiers: gpui_kit::Modifiers::none(),
+                touch_phase: gpui_kit::TouchPhase::Moved,
+            }
+            .to_platform_input(),
+            cx,
+        );
+    });
+    in_frame(cx, handle, |window, cx| {
+        let mut settings = window.within("settings");
+        let mut group = settings.within("group-1");
+        let mut encoding = group.within("item-5");
+        assert_eq!(encoding.find("btn").label(), Some("Unicode (UTF-8)"));
+        encoding.click("btn", cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        let mut choices = window.within("popup-menu");
+        for (ix, label) in [
+            "Unicode (UTF-16)",
+            "Unicode (UTF-16BE)",
+            "Unicode (UTF-16LE)",
+            "Unicode (UTF-32)",
+            "Unicode (UTF-32BE)",
+            "Unicode (UTF-32LE)",
+            "Unicode (UTF-7)",
+            "Unicode (UTF-8)",
+            "中文 (GB 18030)",
+            "中文 (GBK)",
+            "中文 (ISO 2022-CN)",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(choices.find(ix).label(), Some(label));
+        }
+        choices.click(9usize, cx);
+    });
+    let id = LocalTerminalId(1);
+    let terminal = cx.update(|cx| {
+        workspace
+            .read(cx)
+            .local_terminal(id)
+            .unwrap()
+            .read(cx)
+            .terminal()
+            .clone()
+    });
+    for (restart, expected) in [(false, "中文".as_bytes()), (true, &b"\xd6\xd0\xce\xc4"[..])] {
+        if restart {
+            in_frame(cx, handle, |window, cx| {
+                window.click(("local-terminal-tab", 1_u64), cx);
+                window.dispatch_action(Box::new(RestartLocalTerminal(id)), cx);
+            });
+            cx.wait_for(handle.into(), Duration::from_secs(2), |_, cx| {
+                factory.starts() == 2
+                    && terminal.read(cx).lifecycle(cx) == TerminalLifecycle::Running
+            })
+            .await;
+        }
+        cx.update(|cx| {
+            cx.write_to_clipboard(ClipboardItem::new_string("中文".into()));
+            terminal.update(cx, |terminal, cx| terminal.paste_clipboard(cx));
+        });
+        cx.wait_for(handle.into(), Duration::from_secs(2), |_, _| {
+            factory
+                .writes
+                .lock()
+                .unwrap()
+                .last()
+                .is_some_and(|bytes| bytes == expected)
+        })
+        .await;
+    }
 }
 
 /// 全选 takes the scrollback too, without the blank lines below the text.

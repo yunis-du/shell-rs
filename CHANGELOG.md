@@ -6,13 +6,15 @@ One section per version, titled `## [version]`, optionally followed by a date. E
 
 ## [0.1.19]
 
-This is the first release from the fork maintained by Yunis. Install it from [this fork’s GitHub Releases](https://github.com/yunis-du/shell-rs/releases) once to receive future updates from this repository. About ShellRS credits original author Xuz (@since2006).
+ShellRS was originally created by [Xuz](https://github.com/since2006). Yunis (@yunis-du) maintains this fork. Install it from [this fork’s GitHub Releases](https://github.com/yunis-du/shell-rs/releases) once to receive future updates from this repository.
 
 ### Added
 
 - Search saved command snippets in a keyboard picker and run one in the current terminal.
 - Confirm before quitting. The confirmation is on by default and can be turned off in Settings.
 - Open a local terminal at startup, split terminals with shortcuts, and open the quick connection picker from the keyboard.
+- Choose the character encoding for terminal input and output in Settings → Terminal → Interaction. UTF-8 is the default; options include GBK, GB 18030, ISO 2022-CN, and several Unicode formats.
+- Double-click a word in the terminal to copy it. This is on by default and can be turned off separately from Copy on select.
 
 ### Changed
 
@@ -24,6 +26,7 @@ This is the first release from the fork maintained by Yunis. Install it from [th
 - Splitting to the right leaves the existing tabs in place. Closing a tab in a split restores keyboard focus to a remaining terminal.
 - Open dialogs keep keyboard focus when tabs change in the background.
 - Powerline separators and rounded caps in Starship prompts line up with their backgrounds.
+- New macOS local terminals use the selected character locale when available, so Chinese filenames display correctly with the default UTF-8 setting.
 
 ## [0.1.18]
 

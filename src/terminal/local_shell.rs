@@ -66,6 +66,7 @@ impl LocalShell {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LocalLaunch {
     pub shell: LocalShell,
+    pub encoding: super::TerminalEncoding,
     pub directory: Option<PathBuf>,
     pub replay: Option<Vec<u8>>,
 }

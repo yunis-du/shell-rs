@@ -76,6 +76,9 @@ terminal.command.full_screen:
 terminal.command.multiline:
   zh-CN: 这是一条多行命令，在这个终端里只能直接执行
   en: This is a multi-line command, which this terminal can only run directly
+terminal.command.unmappable:
+  zh-CN: 命令包含当前字符编码不支持的字符
+  en: The command contains characters the current encoding doesn’t support
 
 # State of a terminal
 terminal.lifecycle.starting:

@@ -937,6 +937,7 @@ fn run_error(failure: RunFailure, host: &str) -> CliError {
         RunFailure::Busy(BusyReason::NoAnswer) => busy(t!("cli.terminal.no_answer")),
         RunFailure::Busy(BusyReason::NotStarted) => busy(t!("cli.terminal.not_started")),
         RunFailure::Busy(BusyReason::Transfer) => busy(t!("cli.terminal.transferring")),
+        RunFailure::Busy(BusyReason::Encoding) => busy(t!("cli.terminal.encoding")),
         RunFailure::Disconnected => {
             CliError::new(ErrorCode::ConnectFailed, t!("cli.terminal.disconnected"))
         }

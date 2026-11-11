@@ -13,8 +13,8 @@ use crate::i18n::t;
 
 use super::{
     LocalLaunch, LocalShell, LocalTerminalTransportProvider, SharedTerminalTransportFactory,
-    TerminalSize, TerminalTransport, TerminalTransportCommand, TerminalTransportEvent,
-    TerminalTransportFactory, send_event, strip_launcher_vars,
+    TerminalEncoding, TerminalSize, TerminalTransport, TerminalTransportCommand,
+    TerminalTransportEvent, TerminalTransportFactory, send_event, strip_launcher_vars,
 };
 
 /// Local terminals in a PTY of this computer.
@@ -58,6 +58,7 @@ impl TerminalTransport for LocalPtyTransport {
     ) -> Result<()> {
         let LocalLaunch {
             shell,
+            encoding,
             directory,
             replay,
         } = self.launch;
@@ -70,7 +71,7 @@ impl TerminalTransport for LocalPtyTransport {
             .openpty(to_pty_size(initial_size))
             .context(t!("terminal.pty.open_failed"))?;
 
-        let mut command = shell_command(&shell)?;
+        let mut command = shell_command(&shell, encoding)?;
         // A folder gone since leaves the home folder, as with none.
         if let Some(directory) = directory.filter(|directory| directory.is_dir()) {
             command.cwd(directory);
@@ -218,11 +219,12 @@ impl TerminalTransport for LocalPtyTransport {
 /// The command a local terminal's shell runs: the shell the settings name,
 /// in the environment ShellRS itself was started in, with the few
 /// variables a terminal needs and none of the packaging's.
-fn shell_command(shell: &LocalShell) -> Result<CommandBuilder> {
+fn shell_command(shell: &LocalShell, encoding: TerminalEncoding) -> Result<CommandBuilder> {
     let mut command = shell.command_builder()?;
     // The packaging that put ShellRS on this computer left variables in
     // the environment; they are none of the user's shell's business.
     strip_launcher_vars(&mut command);
+    super::environment::set_character_locale(&mut command, encoding);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
     command.env("TERM_PROGRAM", "ShellRS");
@@ -328,7 +330,7 @@ mod tests {
     /// ShellRS was started in, without what the packaging left in it.
     #[test]
     fn the_shell_starts_without_the_packaging() {
-        let command = shell_command(&LocalShell::new("/bin/sh")).unwrap();
+        let command = shell_command(&LocalShell::new("/bin/sh"), TerminalEncoding::Utf8).unwrap();
         for name in LAUNCHER_VARS {
             assert_eq!(command.get_env(name), None, "{name} is left in");
         }
@@ -473,6 +475,53 @@ mod tests {
             )))
         };
         LocalPtyTransportProvider.factory_for(&launch).create()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn local_ls_respects_the_character_locale() {
+        const CHILD: &str = "SHELLRS_TEST_LOCAL_LS_EXPECTED";
+        if let Ok(expected) = std::env::var(CHILD) {
+            let folder = tempfile::tempdir().unwrap();
+            std::fs::File::create(folder.path().join("中文.txt")).unwrap();
+            let transport = shell_in("exec /bin/ls -q", folder.path());
+            let (commands, command_receiver) = mpsc::channel();
+            let (events, event_receiver) = async_channel::unbounded();
+            let worker = thread::spawn(move || {
+                transport.run(TerminalSize::DEFAULT, command_receiver, events)
+            });
+            let (output, code) = drain_until_exit(&event_receiver, &commands);
+            worker.join().unwrap().unwrap();
+            assert_eq!(code, Some(0), "{output}");
+            assert_eq!(output.trim_end(), expected);
+            return;
+        }
+
+        for (lc_all, expected) in [(None, "中文.txt"), (Some("C"), "??????.txt")] {
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+            child
+                .args([
+                    "--exact",
+                    "terminal::local_pty::tests::local_ls_respects_the_character_locale",
+                ])
+                .env(CHILD, expected)
+                .env_remove("LC_ALL")
+                .env_remove("LC_CTYPE")
+                .env_remove("LANG");
+            if let Some(lc_all) = lc_all {
+                child.env("LC_ALL", lc_all);
+            }
+            let output = {
+                let _forks = crate::testing::no_forks();
+                child.output().unwrap()
+            };
+            assert!(
+                output.status.success() && output.stdout.starts_with(b"\nrunning 1 test\n"),
+                "LC_ALL={lc_all:?}: {}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+        }
     }
 
     #[test]
