@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/since2006/shell-rs/releases"><img src="https://img.shields.io/github/v/release/since2006/shell-rs?include_prereleases&label=release" alt="Release"></a>
+  <a href="https://github.com/yunis-du/shell-rs/releases"><img src="https://img.shields.io/github/v/release/yunis-du/shell-rs?include_prereleases&label=release" alt="Release"></a>
   <a href="#许可证"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platform: macOS | Windows | Linux">
   <img src="https://img.shields.io/badge/rust-1.98-orange" alt="Rust 1.98">
@@ -96,7 +96,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 
 - 秘密只进系统钥匙串；主机信任记录存在 ShellRS 自己的 `known_hosts` 里，不改动 `~/.ssh`。
 - 在线升级：更新清单经 minisign 签名，安装包按 SHA-256 校验；后台下载，重启或退出时安装。分稳定版和 Beta 两个渠道，检查更新只发送版本号、系统和 CPU 架构。
-- 匿名使用统计：经 Aptabase 只发送版本、系统、CPU 架构和各功能的使用次数，不含主机、凭据、命令或任何标识，可在「设置 › 关于」关闭。详见[使用手册](docs/manual.zh.md#隐私)。
+- ShellRS 不收集或发送使用统计。详见[隐私说明](docs/manual.zh.md#隐私)。
 
 ## 截图
 
@@ -122,7 +122,7 @@ ShellRS 把 Xshell 式的主机管理和多标签终端、WinSCP 式的双栏 SF
 
 ## 下载
 
-到官网 [shellrs.com/download](https://shellrs.com/download) 下载，页面会按你的系统给出对应的安装包；也可以到 GitHub [Releases](https://github.com/since2006/shell-rs/releases) 下载。Beta 版在 Releases 里标为 Pre-release，想提前用上新功能，可以在「设置 › 关于」里把更新渠道切到 Beta。
+请从本分支的 [GitHub Releases](https://github.com/yunis-du/shell-rs/releases) 下载适合你系统的安装包。Beta 版在 Releases 里标为 Pre-release，想提前用上新功能，可以在「设置 › 关于」里把更新渠道切到 Beta。
 
 | 系统 | 安装包 | 说明 |
 | --- | --- | --- |

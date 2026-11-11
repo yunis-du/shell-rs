@@ -19,39 +19,26 @@ pub const BUILD_DATE: Option<&str> = option_env!("SHELLRS_BUILD_DATE");
 /// The Apple team that signs ShellRS: a new bundle must come from it.
 pub const APPLE_TEAM_ID: Option<&str> = option_env!("SHELLRS_APPLE_TEAM_ID");
 
-/// Where each channel's signed manifest lives. Every ShellRS ever shipped
-/// asks here, so the address never changes; a new manifest format gets a
-/// new `schema`, not a new path.
-pub const MANIFEST_URL: &str = "https://dl.shellrs.com/update/v1/{channel}.json";
+/// Discover published releases from the fork, then read their signed assets.
+pub const RELEASES_API: &str = "https://api.github.com/repos/yunis-du/shell-rs/releases";
 
 /// The ShellRS website.
 pub const WEBSITE: &str = "https://shellrs.com";
 
 /// Where a person downloads ShellRS by hand.
-pub const DOWNLOAD_PAGE: &str = "https://shellrs.com/download";
+pub const DOWNLOAD_PAGE: &str = "https://github.com/yunis-du/shell-rs/releases";
 
-/// What each version changed, for the interface in `locale`: the website's
-/// Chinese page shows the Chinese changelog, the others the English one.
+/// What each version changed, in the interface's language.
 pub fn changelog_page(locale: &str) -> &'static str {
     if locale == "zh-CN" {
-        "https://shellrs.com/zh/changelog"
+        "https://github.com/yunis-du/shell-rs/blob/main/CHANGELOG.zh.md"
     } else {
-        "https://shellrs.com/changelog"
+        "https://github.com/yunis-du/shell-rs/blob/main/CHANGELOG.md"
     }
 }
 
-/// The minisign public keys a manifest may be signed with: the key in use,
-/// and a spare kept offline so the first can be replaced. Rotating means
-/// shipping a release that knows the new key before signing with it.
-///
-/// The release workflow refuses to build a release while this is empty: a
-/// build without keys rejects every manifest.
-pub const TRUSTED_KEYS: &[&str] = &[
-    // In use: the release workflow signs with it (key id CD239E668A535CB0).
-    "RWSwXFOKZp4jzaKmM9EkpY3iIyI0vMzi4EhFDlXwGy+XYiaHIWZY4ELa",
-    // Spare, kept offline (key id F3B9F08DE80AF399).
-    "RWSZ8wrojfC584RC+h7Frcp/pDW0pd7TaB4pO6bTVVOgSj6mo1KFs0sh",
-];
+/// The fork's public key, stamped into binaries by the release workflow.
+pub(super) const RELEASE_PUBLIC_KEY: Option<&str> = option_env!("SHELLRS_RELEASE_PUBLIC_KEY");
 
 /// Which stream of releases a copy follows. Beta also gets every stable
 /// release that is not behind it.
@@ -84,8 +71,11 @@ impl Channel {
         option_env!("SHELLRS_UPDATE_CHANNEL").and_then(Self::from_key)
     }
 
-    pub fn manifest_url(self) -> String {
-        MANIFEST_URL.replace("{channel}", self.key())
+    pub(super) fn manifest_name(self) -> &'static str {
+        match self {
+            Self::Stable => "stable.json",
+            Self::Beta => "beta.json",
+        }
     }
 }
 
@@ -100,14 +90,8 @@ mod tests {
 
     #[test]
     fn each_channel_has_a_manifest_of_its_own() {
-        assert_eq!(
-            Channel::Stable.manifest_url(),
-            "https://dl.shellrs.com/update/v1/stable.json"
-        );
-        assert_eq!(
-            Channel::Beta.manifest_url(),
-            "https://dl.shellrs.com/update/v1/beta.json"
-        );
+        assert_eq!(Channel::Stable.manifest_name(), "stable.json");
+        assert_eq!(Channel::Beta.manifest_name(), "beta.json");
         assert_eq!(Channel::from_key("nightly"), None);
     }
 

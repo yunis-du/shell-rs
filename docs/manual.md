@@ -183,7 +183,7 @@ The “Settings” button at the bottom of the sidebar, or ⌘, (Ctrl+, on Windo
   - Shortcuts in the SFTP file list and the image preview, and fixed keys such as Enter, the arrow keys, Tab and Esc, aren’t changed here.
 - **External CLI**: see the next section.
 - **General → Window**: “Remember window size” restores the last window size and whether it was maximized, and “Remember window position” puts the window back on the screen and in the place it last was. Both are on by default and take effect at the next launch. If that screen is gone, or the window would be mostly off screen, it opens in the middle of the screen; a window larger than the screen shrinks to fit. On a first launch (or with “Remember window size” off), if the screen has no room for the default size, say a 1920 × 1080 laptop at 150%, the window opens maximized and restores to a size that fits. Full screen isn’t remembered: the window comes back at its size from before full screen. The window’s size and position are recorded in `window.json` in the data folder as it moves. The widths you drag the sidebars to are kept in `settings.json` for the next launch; “Restore defaults” under “Sidebar widths” puts both back to their defaults (280 pixels on the left, 320 on the right), and so does the page’s reset button.
-- **About**: the “Updates” group, with the current version and checking for updates, the update channel and automatic updates (see “Download and updates”); “Send anonymous usage statistics” in the “Privacy” group, on by default (see “Privacy”); and “Website” in the “ShellRS” group, which opens shellrs.com in your browser.
+- **About**: the “Updates” group shows the current version, update checks, the update channel and automatic updates (see “Download and updates”). The “ShellRS” group credits original author Xuz (@since2006) and links to the fork maintained by Yunis, the original repository and its website. The macOS “About ShellRS” menu item shows the same credits.
 
 ## External CLI
 
@@ -567,7 +567,7 @@ When a file name can’t be represented exactly, ShellRS reports an error. The r
 
 ## Download and updates
 
-Packages are on [GitHub Releases](https://github.com/since2006/shell-rs/releases):
+Packages are on [GitHub Releases](https://github.com/yunis-du/shell-rs/releases):
 
 | System | First install | Automatic updates |
 |---|---|---|
@@ -576,7 +576,7 @@ Packages are on [GitHub Releases](https://github.com/since2006/shell-rs/releases
 | Windows x64 portable | Zip; unzip it into any folder you can write to and run it, with its data in the `data` folder beside it (see “Windows portable” below) | Yes |
 | Linux x64 | AppImage | Yes |
 
-ShellRS checks for a new version 30 seconds after it starts, then every 6 hours. When there is one, it downloads and verifies it in the background, and then a green update button appears at the top right of the title bar. Click it: “What’s new” opens the changelog on the website, and “Restart to update” switches to the new version and reopens. Restarting closes open connections and stops transfers (keeping their progress for resuming) and port forwards; the dialog lists exactly which.
+ShellRS checks for a new version 30 seconds after it starts, then every 6 hours. When there is one, it downloads and verifies it in the background, and then a green update button appears at the top right of the title bar. Click it: “What’s new” opens this fork’s changelog on GitHub, and “Restart to update” switches to the new version and reopens. Restarting closes open connections and stops transfers (keeping their progress for resuming) and port forwards; the dialog lists exactly which.
 
 “Updates” in “Settings › About” has just three rows:
 
@@ -585,7 +585,7 @@ ShellRS checks for a new version 30 seconds after it starts, then every 6 hours.
 - **Automatic updates**: when this is off, ShellRS goes online only when you check by hand, and when it finds a new version, you decide whether to download it.
 
 - **Verification**: the update manifest is signed with ShellRS’s release key, and the package is checked against the size and SHA-256 in the manifest; if any step doesn’t match, nothing is installed. On macOS, the new version’s developer signature is checked as well.
-- **Privacy**: checking for updates sends only ShellRS’s version number, the operating system and the CPU architecture, nothing that could identify this computer or you. For anonymous usage statistics, see “Privacy”.
+- **Privacy**: checking for updates sends only ShellRS’s version number, the operating system and the CPU architecture, nothing that could identify this computer or you.
 - **When automatic updates aren’t possible**: when ShellRS runs straight from the DMG or outside the Applications folder, you can’t write to where it’s installed, on Linux it isn’t run as the AppImage, on Windows it’s neither installed by the setup program nor portable, or it’s a development build you compiled yourself. The About page then says why, and offers “Open download page” when a new version is out.
 - **Going back to an older version**: before the database is upgraded to a new schema, it’s backed up as `shellrs.db.v<old version>.bak`. An older version refuses to open a database with a newer schema, so as not to mess up data a newer version saved; to go back, rename the backup to `shellrs.db`.
 
@@ -606,26 +606,6 @@ The portable copy is a zip (`ShellRS-<version>-windows-x86_64-portable.zip`) hol
 
 ## Privacy
 
-ShellRS never sends hosts, credentials, session content, commands, file names or paths, or any identifier that could identify this computer or you. ShellRS itself goes online for only these two things (besides connecting to your hosts):
-
-- **Checking for updates**: sends only ShellRS’s version number, the operating system and the CPU architecture; see “Download and updates”.
-- **Anonymous usage statistics**: sent to [Aptabase](https://aptabase.com) to learn how many installs there are, how many devices use ShellRS each day, how the versions are spread, and which features are used most. “Send anonymous usage statistics” in “Settings › About › Privacy” is on by default; turn it off and nothing more is sent, and the counts collected on this computer are cleared too.
+ShellRS does not collect or send usage statistics. When checking for updates, it sends only the app version, operating system and CPU architecture; see “Download and updates”.
 
 With Sync on, ShellRS writes your data, encrypted, to the folder you chose (the cloud drive’s own app uploads it) or uploads it to the WebDAV server or S3 bucket you entered; ShellRS connects to no sync server of its own. The files are encrypted whole, the device’s name (the computer’s), system and ShellRS version included; see “Sync”.
-
-Every statistics event carries ShellRS’s version number and the operating system’s name and version (such as macOS 15.1, Windows 10.0.22631, Ubuntu 24.04). There are only four events:
-
-| Event | When it’s sent |
-|---|---|
-| `app_installed` | Once, on the first launch. The data folder records that it was reported; a different data folder, or deleting it, reports it again |
-| `app_started` | Every launch |
-| `app_active` | The first time each day (UTC) the window comes to the front; not again on the day ShellRS started. On macOS, a closed window with ShellRS left in the background doesn’t count |
-| `usage` | How many times each feature was used: once 4 hours have passed since the first use, summed up into one event at the next launch, activation or use |
-
-The first three carry these settings and counts, each with a fixed set of possible values: CPU architecture, how ShellRS was installed (setup program, portable, macOS app bundle, AppImage or other), appearance, interface language, light and dark themes (names of built-in themes), whether the interface matches the theme, whether highlighting, the external CLI and automatic updates are on, the update channel, whether any shortcut was changed, the SFTP icon style (monochrome or color), and how many hosts, credentials, port forwards and snippets are saved (only as a band: 0, 1-5, 6-20, 21-100, 100+).
-
-`usage` has only counts, no content. It counts: SSH terminals connected (also counted separately for jump hosts, proxies, credentials, no password, quick connections and external connections), SFTP connected (also counted for quick connections and external connections), opening SFTP’s Find files, local terminals, serial terminals connected, Telnet terminals connected, port forwards started (local, remote, dynamic), upload and download batches, ZMODEM uploads and downloads in terminals, the editor opening local and remote files, previews of images and Markdown, opening each of the twelve right sidebar tools, opening a new local terminal in Projects, snippets and history commands sent to the terminal, terminal find, notifications (program, bell, keyword), the external CLI’s `exec`, `upload`, `download`, `sync`, `hosts` and `credentials` commands, turning highlighting and the external CLI on and off, and importing hosts from `~/.ssh/config` or `~/.ssh/known_hosts` (how often, not how many hosts).
-
-- Counts are first kept in `analytics.json` in the data folder, so quitting doesn’t lose them, and they’re sent later. Being offline or on an intranet doesn’t get in the way: when sending fails, ShellRS waits 1 minute, then doubles the wait each time up to 6 hours, and retries only while you’re using ShellRS, sending no requests while it’s idle.
-- Aptabase infers the country and region from the request’s IP address but doesn’t store the IP. It tells devices apart by a hash of the IP and User-Agent with a random salt that changes every day, so it can’t follow the same device across days.
-- Development builds you compile yourself don’t send statistics, and neither does the external CLI (the `shellrs` command) itself.

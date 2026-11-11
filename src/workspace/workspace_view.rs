@@ -22,7 +22,6 @@ use gpui_kit::*;
 
 use super::editors::describe_files;
 use super::front::follow_focus;
-use crate::analytics::{Analytics, AnalyticsServices, Counter};
 use crate::app::ExplorerDispatch as _;
 use crate::app::{
     CenterTab, ClearTerminal, CloseActiveTab, CloseEditor, CloseExplorer, CloseLocalTerminal,
@@ -46,9 +45,7 @@ use crate::connection::{
 };
 use crate::credential::CredentialPanel;
 use crate::editor::{EditorId, EditorPanel};
-use crate::explorer::{
-    ExplorerId, ExplorerPanel, ExplorerPanelEvent, PreviewKind, confirm_close_transfer,
-};
+use crate::explorer::{ExplorerId, ExplorerPanel, ExplorerPanelEvent, confirm_close_transfer};
 use crate::forward::{
     ForwardManager, ForwardManagerEvent, ForwardPanel, SharedForwardTransportProvider,
     SshForwardTransportProvider,
@@ -66,7 +63,7 @@ use crate::settings::{
 };
 use crate::sftp::{
     SftpRoute, SharedLocalDirectoryProvider, SharedSftpTransportProvider, SshSftpTransportProvider,
-    SystemLocalDirectoryProvider, TransferDirection,
+    SystemLocalDirectoryProvider,
 };
 use crate::shared::{commit_footer, confirm_danger, open_rename_tab_dialog};
 use crate::ssh::{
@@ -209,9 +206,6 @@ pub struct Workspace {
     /// 同步. Without services in UI tests, so it never reaches a folder
     /// unless a test hands it a store.
     pub(super) sync: Entity<SyncService>,
-    /// 匿名使用统计. Production only, like the CLI server: UI tests hand in
-    /// one that only records.
-    pub(super) analytics: Option<super::analytics::Reporting>,
     local_terminal_provider: SharedLocalTerminalTransportProvider,
     host_terminals: HostTerminalTransports,
     sftp_provider: SharedSftpTransportProvider,
@@ -352,12 +346,6 @@ impl Workspace {
         this.sync.update(cx, |sync, cx| {
             sync.set_services(crate::sync::system_services(), cx)
         });
-        if let Some(services) = AnalyticsServices::system() {
-            let enabled = this.settings.read(cx).settings().analytics.enabled;
-            this.set_analytics(Analytics::start(services, enabled), window, cx);
-            this.report_started(cx);
-            this.count_automatic_forwards(cx);
-        }
         this
     }
 
@@ -522,7 +510,6 @@ impl Workspace {
                 this.sync_cli_server(cx);
                 this.sync_updater(cx);
                 this.follow_sync_settings(cx);
-                this.sync_analytics(window, cx);
                 if !settings
                     .read(cx)
                     .settings()
@@ -742,7 +729,6 @@ impl Workspace {
             locked_links: Vec::new(),
             updater,
             sync,
-            analytics: None,
             local_terminal_provider,
             host_terminals,
             sftp_provider,
@@ -1480,7 +1466,6 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.open_local_terminal(None, window, cx);
-        self.count(Counter::LocalTerminal);
     }
 
     /// Open a local terminal tab: in the home folder, or a saved terminal's
@@ -1896,29 +1881,6 @@ impl Workspace {
             self.show_editor(&editor, window, cx);
             return;
         }
-        match action.command() {
-            ExplorerCommand::Enqueue(job) => self.count(match job.direction() {
-                TransferDirection::Upload => Counter::Upload,
-                TransferDirection::Download => Counter::Download,
-            }),
-            // The sidebar's 文件 has no 查找文件 to count.
-            ExplorerCommand::FindFiles
-                if panel.read(cx).connection_state() == ConnectionState::Connected
-                    && !panel.read(cx).is_sidebar() =>
-            {
-                self.count(Counter::SftpFind)
-            }
-            ExplorerCommand::Preview { remote, path } => {
-                if let Some((_, kind)) = panel.read(cx).preview_target(*remote, path.as_deref(), cx)
-                {
-                    self.count(match kind {
-                        PreviewKind::Image(_) => Counter::PreviewImage,
-                        PreviewKind::Markdown => Counter::PreviewMarkdown,
-                    });
-                }
-            }
-            _ => {}
-        }
         if matches!(action.command(), ExplorerCommand::CloseConfirmed) {
             self.remove_explorer(action.explorer(), window, cx);
         } else {
@@ -2212,7 +2174,6 @@ impl Workspace {
     ) {
         if let Some(terminal) = self.active_terminal(cx) {
             terminal.update(cx, |terminal, cx| terminal.open_find(window, cx));
-            self.count(Counter::Find);
         }
     }
 
@@ -2728,7 +2689,6 @@ fn new_terminal_panel(
                 cx.notify();
             }
             TerminalPanelEvent::Connected(terminal_id, host_id) => {
-                this.count_connection(*host_id, false, cx);
                 this.store
                     .update(cx, |store, cx| store.record_connection(*host_id, cx));
                 // A Telnet or serial terminal has no 文件 beside it.
@@ -2911,7 +2871,6 @@ fn new_explorer_panel(
                     let panel = panel.read(cx);
                     panel.connection_state() == ConnectionState::Connected && !panel.is_sidebar()
                 }) {
-                    this.count_connection(*host_id, true, cx);
                     this.store
                         .update(cx, |store, cx| store.record_connection(*host_id, cx));
                 }
@@ -3111,7 +3070,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_restart_to_update))
             .on_action(cx.listener(Self::on_open_download_page))
             .on_action(cx.listener(Self::on_open_changelog))
-            .on_action(cx.listener(Self::on_open_website))
             .on_action(cx.listener(Self::on_set_up_sync))
             .on_action(cx.listener(Self::on_set_up_sync_in))
             .on_action(cx.listener(Self::on_set_up_webdav_sync))

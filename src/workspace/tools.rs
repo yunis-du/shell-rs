@@ -24,7 +24,6 @@ use gpui_kit::component::{
 };
 use gpui_kit::*;
 
-use crate::analytics::Counter;
 use crate::app::{
     CenterTab, ControlContainers, ControlService, CopyCommand, EndProcess, EnterCommand,
     RefreshConnections, RefreshDocker, RefreshGpu, RefreshHistory, RefreshProcesses,
@@ -244,7 +243,6 @@ impl Workspace {
             self.remember_target_tool(&target, None, cx);
         } else {
             self.remember_target_tool(&target, Some(tool), cx);
-            self.count_tool(tool);
         }
         self.sync_tool_sidebar(window, cx);
     }
@@ -370,19 +368,13 @@ impl Workspace {
         let Some(target) = self.tool_target(cx) else {
             return;
         };
-        // Only the snippets and the history put commands in.
-        let counter = match self.tools.read(cx).tool() {
-            ToolKind::History => Counter::CommandHistory,
-            _ => Counter::CommandSnippet,
-        };
-        self.enter_command_on(target, action, counter, window, cx);
+        self.enter_command_on(target, action, window, cx);
     }
 
     pub(super) fn enter_command_on(
         &mut self,
         target: ToolTarget,
         action: &EnterCommand,
-        counter: Counter,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -411,7 +403,6 @@ impl Workspace {
             Ok(()) => {
                 let focus = view.read(cx).focus_handle();
                 window.focus(&focus, cx);
-                self.count(counter);
             }
             Err(why) => {
                 let message = if *run {

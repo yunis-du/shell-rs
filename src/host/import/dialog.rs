@@ -31,10 +31,9 @@ use super::{
     read_source,
 };
 
-/// What an import added, for the workspace to count and report.
+/// What an import added, for the workspace to show in a notification.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImportOutcome {
-    pub source: ImportSource,
     pub hosts: usize,
     pub credentials: usize,
     /// Whether some of it did not reach the database: that is reported on
@@ -279,7 +278,6 @@ impl ImportDialog {
             .update(cx, |store, cx| apply_import(plan, store, cx));
         on_imported(
             ImportOutcome {
-                source: self.source,
                 hosts: imported.hosts,
                 credentials: imported.credentials,
                 failed: !imported.failures.is_empty(),

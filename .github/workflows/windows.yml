@@ -17,7 +17,6 @@ on:
     branches: ["**"]
     paths:
       - "src/cli/**"
-      - "src/analytics/**"
       - "src/update/**"
       - "src/app/mod.rs"
       - "src/app/paths.rs"

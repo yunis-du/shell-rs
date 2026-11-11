@@ -8,7 +8,7 @@ ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell / WinSCP 式的 SSH �
 
 - **术语**：保存的一项叫「主机」（量词「台」），代码里叫 host（`Host`、`HostStore`、`hosts` 表）；以前叫「会话」/ `Session`，别再用。IP / 域名字段叫「地址」。SSH 协议层的 session 照旧叫 session。
 - **两种不保存的连接**：「外部连接」是堡垒机用 `ssh://` / `-url` / `sftp://` 拉起 ShellRS，只开一个标签；「临时连接」从标题栏打开，功能齐全。代码里统称 temporary。
-- **全是真的**：SQLite（默认在系统数据目录，`SHELLRS_DATA_DIR` 可覆盖，Windows 便携版在 exe 旁的 `data`）、本地终端、SSH（`russh`）、Telnet（自己写）、串口（`serial2`）、SFTP、端口转发、凭据、右侧栏工具、编辑器、外部 CLI、在线升级、匿名统计。密码和口令只进系统钥匙串，**数据库里永远不出现秘密**。
+- **全是真的**：SQLite（默认在系统数据目录，`SHELLRS_DATA_DIR` 可覆盖，Windows 便携版在 exe 旁的 `data`）、本地终端、SSH（`russh`）、Telnet（自己写）、串口（`serial2`）、SFTP、端口转发、凭据、右侧栏工具、编辑器、外部 CLI、在线升级。密码和口令只进系统钥匙串，**数据库里永远不出现秘密**。
 
 做 UI 之前先读 `gpui-kit` 与 `gpui-kit-design-guides` 两个技能，里面的 Coding Guides 和 Design Guides 在本仓库是规范。不要凭记忆臆造 gpui-kit API，以 `~/.cargo/registry/src/*/gpui-component-0.6.1/`、`gpui-base-0.6.1/` 的源码为准。
 
@@ -39,7 +39,6 @@ ShellRS（crate 与二进制都叫 `shellrs`）是 Xshell / WinSCP 式的 SSH �
 - **命令广播**：标签图标前出现复选框，勾满两个自动排成分屏，撰写窗格改为发给全部（广播时它就是命令栏）；命令原样发出、不先清行；同步按键默认关。
 - **Windows 便携版**：一个 zip 既是首次下载也是升级包；exe 旁有 `data` 才算便携版。密码仍进凭据管理器、和安装版共用（用户定的）。
 - **软件渲染**：CPU 渲染时终端少画几帧、光标不闪、关动画。
-- **匿名使用统计**（Aptabase）：默认开、可关；只发版本、系统、设置快照和功能次数，不发内容和任何标识。不用定时器（用户明确不要），只有发布构建发。
 - **编辑器**：中间区 Dock 标签，不用系统程序；只认 UTF-8、上限 5 MB；远程文件原地改写，保存前核对是否被改过。
 - **预览**：图片和 Markdown，快速查看式的大对话框，不是标签。
 - **窗口**：默认记住大小和位置。左右侧栏拖动后的宽度记在设置里、下次启动照旧（左默认 280 最窄 180，右默认 320 最窄 220），「设置 › 应用 › 窗口 › 侧栏宽度」恢复默认（用户定的）。macOS 菜单栏只有「ShellRS」和「窗口」两个菜单，同其他 Mac 应用（issue #88）；⌘H、⌥⌘H、⌘M 是固定键，不进快捷键设置，也不能设给别的功能；不做「编辑」菜单（终端的 ⌘C、⌘V 有自己的规则）。
@@ -96,7 +95,7 @@ Cargo workspace，`cargo` 命令默认覆盖前四个包：
 - `sftp/`：重新导出核心的传输引擎（批次、并行、断点续传、重连），加上本机侧（目录、废纸篓）、引擎事件的文案和接到 SSH 的胶水。`explorer/`：SFTP 标签和右侧栏「文件」的界面、查找文件、预览。`editor/`：编辑器标签。
 - `forward/`：端口转发的运行和界面。`credential/`：凭据界面。`project/`：「项目」的树和对话框（模型在主机核心，打开、保存和恢复终端在 `workspace/projects.rs`）。
 - `monitor/`、`gpu/`、`netstat/`、`processes/`、`services/`、`docker/`、`kubernetes/`、`tmux/`、`history/`、`snippets/`：右侧栏工具，各自是「命令 + 纯解析模型 + 面板」。
-- `secrets/`：系统钥匙串（`KeychainSecretStore`），接口和其余实现在主机核心。`settings/`：设置与设置页（「云同步」页在 `sync_page.rs`）。`cli/`：外部 CLI。`update/`：在线升级。`analytics/`：匿名统计。
+- `secrets/`：系统钥匙串（`KeychainSecretStore`），接口和其余实现在主机核心。`settings/`：设置与设置页（「云同步」页在 `sync_page.rs`）。`cli/`：外部 CLI。`update/`：在线升级。
 - `sync/`：重新导出主机核心的同步，加上应用自己的：`SyncService`（什么时候同步，以及创建、加入、改密码、移除设备、关闭这些任务）、对话框和错误的文案（`describe.rs`）；一轮怎么走在核心的 `sync/round.rs`，导出、应用记录在核心的 `data/sync.rs`，处理器在 `workspace/sync.rs`。
 - `workspace/`：窗口壳，持有 store、`DockArea` 和**全部动作处理器**，按领域拆文件。`shared/`：多个功能共用的展示片段。
 

@@ -49,7 +49,7 @@ pub use protocol::{
     HostInfo, ParityChoice, ProtocolChoice, ProxyChoice, Reply, Request, RouteDetails, RouteFields,
     Secret, SerialDetails, SerialFields, TerminalContext, TransferCounters, TransferSummary,
 };
-pub use server::{ChangeReply, CliBackend, CliServer, CliTarget, CliUse};
+pub use server::{ChangeReply, CliBackend, CliServer, CliTarget};
 
 // `--help` is English whatever the interface language, so it names the
 // settings it points to in both.

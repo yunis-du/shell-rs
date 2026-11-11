@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
+use gpui_kit::base::Link;
 use gpui_kit::component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _,
     button::{Button, ButtonVariants as _},
@@ -22,8 +23,8 @@ use gpui_kit::*;
 
 use crate::app::{
     CatalogIcon, CenterTab, CheckForUpdates, CloseSettings, CopyAgentSkill, DownloadUpdate,
-    InstallAgentSkill, InstallCliCommand, OpenDownloadPage, OpenWebsite, RefreshCliIntegration,
-    RemoveAgentSkill, RemoveCliCommand, ShowUpdate,
+    FORK_REPOSITORY, InstallAgentSkill, InstallCliCommand, OpenDownloadPage, RefreshCliIntegration,
+    RemoveAgentSkill, RemoveCliCommand, ShowUpdate, UPSTREAM_REPOSITORY,
 };
 use crate::cli::{AgentKind, BinaryStatus, CliIntegration, IntegrationStatus, SkillStatus};
 use crate::explorer::{FileIcon, FileIconKind};
@@ -1169,12 +1170,10 @@ fn external_cli_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
     ]
 }
 
-/// 关于: 应用更新, as three rows: the version with where updating stands,
-/// the channel, and 自动升级; then 隐私, whether usage statistics are sent.
+/// 关于: 应用更新, followed by the fork and upstream credits.
 fn about_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
     let snapshot = panel.updater.read(cx).snapshot();
     let (reader, writer) = (panel.store.clone(), panel.store.clone());
-    let (analytics_reader, analytics_writer) = (panel.store.clone(), panel.store.clone());
     vec![
         SettingGroup::new()
             .title(t!("settings.about.updates"))
@@ -1203,36 +1202,59 @@ fn about_groups(panel: &SettingsPanel, cx: &App) -> Vec<SettingGroup> {
                 )
                 .description(t!("settings.about.automatic_description")),
             ]),
-        SettingGroup::new()
-            .title(t!("settings.about.privacy"))
-            .items([SettingItem::new(
-                t!("settings.about.analytics"),
-                SettingField::switch(
-                    move |cx| analytics_reader.read(cx).settings().analytics.enabled,
-                    move |enabled, cx| {
-                        analytics_writer.update(cx, |store, cx| {
-                            store.update(|settings| settings.analytics.enabled = enabled, cx)
-                        });
-                    },
-                )
-                .default_value(true),
+        SettingGroup::new().title("ShellRS").items([
+            SettingItem::new(
+                t!("settings.about.fork"),
+                about_link("open-fork-repository", FORK_REPOSITORY),
             )
-            .description(t!("settings.about.analytics_description"))]),
-        SettingGroup::new()
-            .title("ShellRS")
-            .items([SettingItem::new(
+            .description(t!("app.about.fork_credit")),
+            SettingItem::new(
+                t!("settings.about.upstream"),
+                about_link("open-upstream-repository", UPSTREAM_REPOSITORY),
+            )
+            .description(t!("app.about.upstream_credit")),
+            SettingItem::new(
                 t!("settings.about.website"),
-                SettingField::render(|options, _, _| {
-                    Button::new("open-website")
-                        .outline()
-                        .with_size(options.size())
-                        .icon(Icon::new(CatalogIcon::ExternalLink))
-                        .label("shellrs.com")
-                        .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenWebsite), cx))
-                }),
+                about_link("open-website", build_info::WEBSITE),
             )
-            .description(t!("settings.about.website_description"))]),
+            .description(t!("settings.about.website_description")),
+        ]),
     ]
+}
+
+fn about_link(id: &'static str, url: &'static str) -> SettingField<SharedString> {
+    SettingField::render(move |_, _, cx| {
+        let label = url
+            .trim_start_matches("https://")
+            .trim_start_matches("github.com/");
+        let theme = cx.theme();
+        let (hover, active, ring) = (theme.button_hover, theme.button_active, theme.ring);
+        div().id(id).test_support().child(
+            Link::new("link")
+                .href(url)
+                .accessibility_label(label)
+                .open_with(|url, _, _, cx| cx.open_url(url))
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap_1()
+                .h_6()
+                .px_2()
+                .rounded(theme.radius)
+                .border_1()
+                .border_color(theme.input)
+                .bg(theme.input_background())
+                .text_sm()
+                .text_color(theme.button_foreground)
+                .whitespace_nowrap()
+                .cursor_pointer()
+                .hover(move |style| style.bg(hover))
+                .active(move |style| style.bg(active))
+                .focus_visible(move |style| style.border_color(ring))
+                .child(Icon::new(CatalogIcon::ExternalLink).small())
+                .child(label),
+        )
+    })
 }
 
 /// 当前版本: where updating stands under the title, and the version with the

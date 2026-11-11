@@ -163,7 +163,7 @@ pub enum UpdaterEvent {
 
 /// What a worker reports.
 enum WorkerEvent {
-    Checked(Result<Opened, UpdateError>),
+    Checked(Result<Option<Opened>, UpdateError>),
     Progress(u64),
     Verifying,
     Staged(Result<Staged, UpdateError>),
@@ -293,17 +293,6 @@ impl Updater {
         }
     }
 
-    /// How this copy was installed, for 匿名使用统计: what its installer is,
-    /// except that a portable copy counts as one even where it cannot
-    /// update itself.
-    pub fn install_type(&self) -> &'static str {
-        match &self.services {
-            Some(services) if services.platform == super::platform::WINDOWS_PORTABLE => "portable",
-            Some(services) => services.installer.kind().install_type(),
-            None => "other",
-        }
-    }
-
     fn installable(&self) -> bool {
         self.unsupported().is_none()
     }
@@ -369,10 +358,11 @@ impl Updater {
         let channel = self.channel;
         self.phase = Phase::Checking;
         self.run(cx, move |events, _| {
-            let opened = services
-                .feed
-                .fetch(channel)
-                .and_then(|bytes| open_envelope(&bytes, channel, &services.keys));
+            let opened = services.feed.fetch(channel).and_then(|bytes| {
+                bytes
+                    .map(|bytes| open_envelope(&bytes, channel, &services.keys))
+                    .transpose()
+            });
             let _ = events.send_blocking(WorkerEvent::Checked(opened));
         });
         self.changed(cx);
@@ -641,19 +631,21 @@ impl Updater {
         }
     }
 
-    fn on_checked(&mut self, result: Result<Opened, UpdateError>, cx: &mut Context<Self>) {
+    fn on_checked(&mut self, result: Result<Option<Opened>, UpdateError>, cx: &mut Context<Self>) {
         let Some(services) = &self.services else {
             return;
         };
         let offer = match result {
-            Ok(Opened::Manifest(manifest)) => {
+            Ok(Some(Opened::Manifest(manifest))) => {
                 manifest.offer(&services.current, services.platform, services.draw)
             }
-            Ok(Opened::NewerFormat { version }) if version > services.current => Offer::Manual {
-                version,
-                installer: None,
-            },
-            Ok(Opened::NewerFormat { .. }) => Offer::UpToDate,
+            Ok(Some(Opened::NewerFormat { version })) if version > services.current => {
+                Offer::Manual {
+                    version,
+                    installer: None,
+                }
+            }
+            Ok(Some(Opened::NewerFormat { .. }) | None) => Offer::UpToDate,
             Err(error) => {
                 self.phase = Phase::Failed {
                     stage: Stage::Check,

@@ -17,7 +17,7 @@ use minisign_verify::{PublicKey, Signature};
 use semver::Version;
 use sha2::{Digest as _, Sha256};
 
-use super::build_info::{Channel, TRUSTED_KEYS};
+use super::build_info::{Channel, RELEASE_PUBLIC_KEY};
 use super::error::UpdateError;
 use super::manifest::{self, Asset, Envelope, Manifest};
 
@@ -42,7 +42,7 @@ impl TrustedKeys {
         let test_key = cfg!(debug_assertions)
             .then(|| std::env::var("SHELLRS_UPDATE_PUBLIC_KEY").ok())
             .flatten();
-        Self::new(TRUSTED_KEYS.iter().copied().chain(test_key.as_deref()))
+        Self::new(RELEASE_PUBLIC_KEY.into_iter().chain(test_key.as_deref()))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -316,11 +316,15 @@ pub(crate) mod tests {
             .output()
             .unwrap();
         assert!(generated.status.success(), "{generated:?}");
+        let public = std::fs::read_to_string(&public).unwrap();
+        let public = public.lines().nth(1).unwrap();
         let dist = dir.path().join("dist");
         std::fs::create_dir(&dist).unwrap();
         for name in [
             "ShellRS-0.2.0-macos-aarch64.app.zip",
             "ShellRS-0.2.0-macos-x86_64.app.zip",
+            "ShellRS-0.2.0-macos-aarch64.dmg",
+            "ShellRS-0.2.0-macos-x86_64.dmg",
             "ShellRS-0.2.0-windows-x86_64-setup.exe",
             "ShellRS-0.2.0-windows-x86_64-portable.zip",
             "ShellRS-0.2.0-linux-x86_64.AppImage",
@@ -331,6 +335,8 @@ pub(crate) mod tests {
         std::fs::write(&notes, "### 新增\n\n- 在线升级\n").unwrap();
         let out = dir.path().join("stable.json");
         let script = concat!(env!("CARGO_MANIFEST_DIR"), "/packaging/make-manifest.sh");
+        let base = "https://github.com/yunis-du/shell-rs/releases/download/v0.2.0";
+        let release = "https://github.com/yunis-du/shell-rs/releases/tag/v0.2.0";
         let made = std::process::Command::new("bash")
             .arg(script)
             .args(["0.2.0", "stable"])
@@ -339,42 +345,31 @@ pub(crate) mod tests {
             .arg(&out)
             .env("MINISIGN_KEY_FILE", &secret)
             .env_remove("MINISIGN_PASSWORD")
-            // As the release workflow sets it.
-            .env(
-                "SHELLRS_MIRROR_BASE",
-                "https://github.com/since2006/shell-rs/releases/download/v0.2.0",
-            )
+            .env("RELEASE_ASSET_BASE", base)
+            .env("RELEASE_URL", release)
+            .env("SHELLRS_RELEASE_PUBLIC_KEY", public)
             .output()
             .unwrap();
         drop(forks);
         assert!(made.status.success(), "{made:?}");
 
-        let public = std::fs::read_to_string(&public).unwrap();
-        let keys = TrustedKeys::new(public.lines().nth(1));
+        let keys = TrustedKeys::new([public]);
         let bytes = std::fs::read(&out).unwrap();
         let Ok(Opened::Manifest(manifest)) = open_envelope(&bytes, Channel::Stable, &keys) else {
             panic!("the client rejects the script's manifest");
         };
         assert_eq!(manifest.version, Version::new(0, 2, 0));
         assert_eq!(manifest.notes, "### 新增\n\n- 在线升级\n");
+        assert_eq!(manifest.notes_url.as_deref(), Some(release));
         for arch in ["aarch64", "x86_64"] {
             let key = format!("macos-{arch}");
             let name = format!("ShellRS-0.2.0-{key}.app.zip");
             let asset = &manifest.assets[&key];
-            // Each architecture has its own package and both download sources.
-            assert_eq!(
-                asset.urls,
-                [
-                    format!("https://dl.shellrs.com/releases/0.2.0/{name}"),
-                    format!(
-                        "https://github.com/since2006/shell-rs/releases/download/v0.2.0/{name}"
-                    ),
-                ]
-            );
+            assert_eq!(asset.urls, [format!("{base}/{name}")]);
             assert_eq!(verify_file(&dist.join(&name), asset), Ok(()));
             assert_eq!(
                 manifest.installers[&key],
-                format!("https://dl.shellrs.com/releases/0.2.0/ShellRS-0.2.0-{key}.dmg")
+                format!("{base}/ShellRS-0.2.0-{key}.dmg")
             );
         }
         assert_ne!(
@@ -406,7 +401,7 @@ pub(crate) mod tests {
         );
         assert_eq!(
             manifest.installers["windows-x86_64-portable"],
-            "https://dl.shellrs.com/releases/0.2.0/ShellRS-0.2.0-windows-x86_64-portable.zip"
+            format!("{base}/ShellRS-0.2.0-windows-x86_64-portable.zip")
         );
         assert_eq!(
             open_envelope(&bytes, Channel::Beta, &keys),
@@ -415,7 +410,9 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_builtin_keys_all_parse() {
-        assert_eq!(TrustedKeys::builtin().0.len(), TRUSTED_KEYS.len());
+    fn the_release_key_parses_when_configured() {
+        if let Some(key) = RELEASE_PUBLIC_KEY.filter(|key| !key.is_empty()) {
+            assert!(!TrustedKeys::new([key]).is_empty());
+        }
     }
 }

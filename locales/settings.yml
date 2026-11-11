@@ -537,18 +537,15 @@ settings.about.automatic:
 settings.about.automatic_description:
   zh-CN: 检测到新版本后自动下载，下载完成后点击「重启并安装」完成更新。
   en: A new version downloads by itself. Once it’s ready, click Restart to update.
-settings.about.privacy:
-  zh-CN: 隐私
-  en: Privacy
-settings.about.analytics:
-  zh-CN: 发送匿名使用统计
-  en: Send anonymous usage statistics
-settings.about.analytics_description:
-  zh-CN: 发送应用版本、操作系统/架构，用于评估安装量、版本分布，用于改进 ShellRS。不会发送任何主机、凭据、命令或会话内容。
-  en: Sends the app version, operating system and architecture, to count installs and versions and to improve ShellRS. No host, credential, command or session content is ever sent.
+settings.about.fork:
+  zh-CN: 本分支
+  en: This fork
+settings.about.upstream:
+  zh-CN: 原项目
+  en: Original project
 settings.about.website:
-  zh-CN: 官网
-  en: Website
+  zh-CN: 原项目官网
+  en: Upstream website
 settings.about.website_description:
   zh-CN: 功能介绍、下载和更新内容。
   en: Features, downloads and what’s new.

@@ -9,11 +9,10 @@ use std::time::Duration;
 
 use gpui_kit::*;
 
-use crate::analytics::Counter;
 use crate::app::ShowOrHideApp;
 use crate::cli::{
-    CliChange, CliError, CliUse, CredentialDeleted, CredentialFields, ErrorCode, HostDeleted,
-    HostFields, Reply,
+    CliChange, CliError, CredentialDeleted, CredentialFields, ErrorCode, HostDeleted, HostFields,
+    Reply,
 };
 use crate::cli::{
     CredentialPlan, SecretChange, credential_details, credential_secrets, find_credential,
@@ -52,17 +51,6 @@ impl Workspace {
                     let server = this.cli_server.as_ref()?;
                     let links = server.take_activation();
                     let change = server.take_change();
-                    for usage in server.take_usage() {
-                        this.count(match usage {
-                            CliUse::Exec => Counter::CliExec,
-                            CliUse::ExecTerminal => Counter::CliExecTerminal,
-                            CliUse::Upload => Counter::CliUpload,
-                            CliUse::Download => Counter::CliDownload,
-                            CliUse::Sync => Counter::CliSync,
-                            CliUse::Hosts => Counter::CliHosts,
-                            CliUse::Credentials => Counter::CliCredentials,
-                        });
-                    }
                     if let Some(links) = links {
                         crate::app::bring_forward(window, cx);
                         if crate::app_lock::is_locked(cx) {

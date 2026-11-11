@@ -5,8 +5,8 @@
 #
 # <dist-dir> holds the release's packages under their published names.
 # MINISIGN_KEY_FILE is the secret key; MINISIGN_PASSWORD its password, if it
-# has one. SHELLRS_MIRROR_BASE, when set (e.g. the GitHub release download
-# URL of a public repository), adds a second address for every package.
+# has one. SHELLRS_RELEASE_PUBLIC_KEY is the public key built into the
+# app. RELEASE_ASSET_BASE and RELEASE_URL point at the GitHub release.
 #
 # The output is the envelope src/update/manifest.rs reads: the manifest's
 # exact text and its minisign signature, whose trusted comment
@@ -20,8 +20,9 @@ notes=$3
 dist=$4
 out=$5
 
-base="https://dl.shellrs.com/releases/$version"
-mirror=${SHELLRS_MIRROR_BASE:-}
+base=${RELEASE_ASSET_BASE:?GitHub release asset base URL is required}
+release_url=${RELEASE_URL:?GitHub release page URL is required}
+public_key=${SHELLRS_RELEASE_PUBLIC_KEY:?Fork update public key is required}
 
 mac_arm="ShellRS-$version-macos-aarch64.app.zip"
 mac_intel="ShellRS-$version-macos-x86_64.app.zip"
@@ -32,6 +33,13 @@ win="ShellRS-$version-windows-x86_64-setup.exe"
 win_portable="ShellRS-$version-windows-x86_64-portable.zip"
 linux="ShellRS-$version-linux-x86_64.AppImage"
 
+for name in "$mac_arm" "$mac_intel" "$dmg_arm" "$dmg_intel" "$win" "$win_portable" "$linux"; do
+    if [ ! -s "$dist/$name" ]; then
+        echo "Missing or empty release package: $dist/$name" >&2
+        exit 1
+    fi
+done
+
 sha256() {
     if command -v sha256sum >/dev/null; then
         sha256sum "$1" | cut -d' ' -f1
@@ -40,17 +48,16 @@ sha256() {
     fi
 }
 
-# The asset entry of one package: its addresses, size and SHA-256.
+# The asset entry of one package: its URL, size and SHA-256.
 asset() {
     local file="$dist/$1"
     local size
     size=$(wc -c <"$file" | tr -d ' ')
     jq -n \
         --arg url "$base/$1" \
-        --arg mirror "${mirror:+$mirror/$1}" \
         --argjson size "$size" \
         --arg sha256 "$(sha256 "$file")" \
-        '{urls: ([$url] + (if $mirror == "" then [] else [$mirror] end)), size: $size, sha256: $sha256}'
+        '{urls: [$url], size: $size, sha256: $sha256}'
 }
 
 work=$(mktemp -d)
@@ -61,7 +68,7 @@ jq -n -j \
     --arg channel "$channel" \
     --arg published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --rawfile notes "$notes" \
-    --arg notes_url "https://shellrs.com/changelog#$version" \
+    --arg notes_url "$release_url" \
     --argjson mac_arm "$(asset "$mac_arm")" \
     --argjson mac_intel "$(asset "$mac_intel")" \
     --argjson win "$(asset "$win")" \
@@ -102,6 +109,7 @@ printf '%s\n' "${MINISIGN_PASSWORD:-}" | minisign -S \
     -m "$work/manifest.json" \
     -x "$work/manifest.json.minisig" \
     -t "shellrs-manifest $channel $version"
+minisign -Vm "$work/manifest.json" -P "$public_key" -q
 
 jq -n \
     --rawfile manifest "$work/manifest.json" \

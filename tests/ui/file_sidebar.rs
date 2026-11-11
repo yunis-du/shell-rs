@@ -4,7 +4,6 @@
 //! the folder the terminal's shell reports (目录跟随).
 
 use crate::support::*;
-use shellrs::analytics::{Analytics, Counter, Signal};
 use shellrs::app::{
     CloseTerminal, ConnectHost, DisconnectTerminal, ExplorerAction, ExplorerCommand,
     ReconnectTerminal,
@@ -423,38 +422,6 @@ async fn files_queue_scrolls_to_a_batch_as_it_is_added(cx: &mut TestAppContext) 
             "{last:?} in {rows:?}"
         );
     });
-}
-
-#[gpui_kit::test]
-async fn files_count_as_a_tool_not_as_an_sftp_connection(cx: &mut TestAppContext) {
-    let fixture = open(cx, FakeSftpProvider::default());
-    let (sender, signals) = mpsc::channel();
-    cx.update_window(fixture.handle.into(), |_, window, cx| {
-        fixture.workspace.update(cx, |workspace, cx| {
-            workspace.set_analytics(Analytics::new(sender, true), window, cx)
-        });
-    })
-    .unwrap();
-    show_files(cx, &fixture, INITIAL_WEB_TERMINAL, FILES).await;
-    // ⌘F there finds nothing, so nothing is counted for it either.
-    in_frame(cx, fixture.handle, |window, cx| {
-        window.dispatch_action(
-            Box::new(ExplorerAction::new(
-                ExplorerId(FILES),
-                ExplorerCommand::FindFiles,
-            )),
-            cx,
-        )
-    });
-    // The seeded terminals' own connections aside.
-    let counted: Vec<Counter> = signals
-        .try_iter()
-        .filter_map(|signal| match signal {
-            Signal::Count(counter) if counter != Counter::Ssh => Some(counter),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(counted, [Counter::ToolFiles]);
 }
 
 /// What 目录跟随's check finds on a bash host whose ~/.bashrc does not

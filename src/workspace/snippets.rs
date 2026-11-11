@@ -6,7 +6,6 @@ use std::rc::Rc;
 use gpui_kit::component::{WindowExt as _, notification::Notification};
 use gpui_kit::*;
 
-use crate::analytics::Counter;
 use crate::app::{
     DeleteSnippet, DeleteSnippetCategory, EditSnippet, EnterCommand, MoveSnippetNode, NewSnippet,
     NewSnippetCategory, NewSnippetIn, NewSnippetSubcategory, QuickSnippet, RenameSnippetCategory,
@@ -77,7 +76,6 @@ impl Workspace {
                 command: action.command.clone(),
                 run: true,
             },
-            Counter::CommandSnippet,
             window,
             cx,
         );

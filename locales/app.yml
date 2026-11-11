@@ -14,6 +14,13 @@ app.tray.failed:
   zh-CN: 无法使用系统托盘，窗口将保持打开：%{error}
   en: "The system tray is unavailable. The window will stay open: %{error}"
 
+app.about.fork_credit:
+  zh-CN: 这是 Yunis 维护的 ShellRS 分支。
+  en: This fork of ShellRS is maintained by Yunis.
+app.about.upstream_credit:
+  zh-CN: 原作者：Xuz（@since2006）。
+  en: Created by Xuz (@since2006).
+
 # The macOS menu bar, worded as macOS words these items in every app: in
 # English in title case, as native menu commands are.
 app.menu.about:

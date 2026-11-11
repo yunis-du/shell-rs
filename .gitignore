@@ -5,3 +5,5 @@
 .env.*
 !.env.example
 .claude/settings.local.json
+/shellrs-update.key
+/shellrs-update.pub

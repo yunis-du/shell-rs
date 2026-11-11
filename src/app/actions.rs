@@ -243,8 +243,6 @@ gpui_kit::actions!(
         OpenDownloadPage,
         /// Open the website's changelog.
         OpenChangelog,
-        /// Open the ShellRS website.
-        OpenWebsite,
         /// 开启同步 › 选择文件夹…: pick the folder to sync through, then make
         /// sync there or join it.
         SetUpSync,

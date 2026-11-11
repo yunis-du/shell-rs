@@ -1,11 +1,11 @@
 [package]
 name = "shellrs"
-version = "0.1.18"
+version = "0.1.19"
 edition = "2024"
 publish = false
 description = "SSH client and host manager: terminal, SFTP, port forwarding"
 license = "GPL-3.0-only"
-repository = "https://github.com/since2006/shell-rs"
+repository = "https://github.com/yunis-du/shell-rs"
 default-run = "shellrs"
 
 # The app. On macOS and Linux it doubles as the `shellrs` command when
@@ -113,9 +113,6 @@ trash = "5"
 minisign-verify = "0.2"
 reqwest = { version = "0.13", features = ["blocking"] }
 semver = { version = "1", features = ["serde"] }
-# 匿名使用统计: the system's name and version for Aptabase, as its own Tauri
-# plugin reads them.
-os_info = { version = "3", default-features = false }
 serde_yaml_ng = "0.10.0"
 # ZMODEM (`rz` / `sz` in a terminal): the protocol only, driven by the
 # terminal's parser thread. Pinned: its 0.x API changes between releases.

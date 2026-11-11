@@ -23,7 +23,7 @@ pub use computer::computer_name;
 #[cfg(target_os = "macos")]
 pub use menu_bar::show_menu_bar;
 pub use paths::{
-    PORTABLE_BIN, PORTABLE_DATA, SETUP_UNINSTALLER, analytics_path, cli_endpoint, cli_socket_path,
+    PORTABLE_BIN, PORTABLE_DATA, SETUP_UNINSTALLER, cli_endpoint, cli_socket_path,
     compose_history_path, data_dir, database_path, keys_dir, portable_root, settings_path,
     terminal_output_dir, updates_dir, window_state_path,
 };
@@ -46,6 +46,10 @@ use gpui_kit::*;
 
 use crate::host::{ErrorMessage, OpenError};
 use crate::i18n::t;
+
+/// Source links shared by Settings and the macOS About panel.
+pub(crate) const FORK_REPOSITORY: &str = "https://github.com/yunis-du/shell-rs";
+pub(crate) const UPSTREAM_REPOSITORY: &str = "https://github.com/since2006/shell-rs";
 
 /// Key context of the host panel, for bindings that only apply there.
 pub const HOST_PANEL_CONTEXT: &str = "HostPanel";

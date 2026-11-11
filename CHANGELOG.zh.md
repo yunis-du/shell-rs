@@ -2,7 +2,28 @@
 
 [English](CHANGELOG.md)
 
-每个版本一节，标题写成 `## [版本号]`，可以在后面加日期。每一节同时写中文（这里）和英文（[CHANGELOG.md](CHANGELOG.md)），在同一次提交里。发布流程（`.github/workflows/release.yml`）把英文版里与 tag 同版本的那一节原样作为 GitHub Release 的说明；官网的更新日志英文和日文页显示英文版，中文页显示这一份（ShellRS 的更新对话框用「查看更新内容」打开官网的更新日志）。用 Markdown 书写，面向使用者。
+每个版本一节，标题写成 `## [版本号]`，可以在后面加日期。每一节同时写中文（这里）和英文（[CHANGELOG.md](CHANGELOG.md)），在同一次提交里。发布流程（`.github/workflows/release.yml`）把英文版里与 tag 同版本的那一节原样作为 GitHub Release 的说明；ShellRS 用「查看更新内容」打开 GitHub 上本分支对应语言的更新日志。用 Markdown 书写，面向使用者。
+
+## [0.1.19]
+
+这是 Yunis 维护的分支首次发布。请先从[本分支的 GitHub Releases](https://github.com/yunis-du/shell-rs/releases)安装一次，后续版本会从这里更新。「关于 ShellRS」注明了原作者 Xuz（@since2006）。
+
+### 新增
+
+- 可用快捷键打开命令片段选择器，搜索并在当前终端执行片段。
+- 默认在退出前确认，可在设置中关闭。
+- 可设置启动时打开本地终端，也可用快捷键分屏和打开快速连接。
+
+### 改进
+
+- 移除匿名使用统计。ShellRS 不再收集或发送使用统计。
+- 稳定版和 Beta 更新从本分支的 GitHub Releases 下载，并通过签名清单校验。
+
+### 修复
+
+- 向右分屏时保留原有标签的位置；分屏后关闭标签，键盘焦点回到剩余终端。
+- 后台标签切换时，打开的弹窗仍会保留键盘焦点。
+- 修复 Starship 提示符中 Powerline 分隔符和圆角端帽与背景不对齐的问题。
 
 ## [0.1.18]
 

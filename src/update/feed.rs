@@ -13,6 +13,8 @@ use std::time::Duration;
 use reqwest::StatusCode;
 use reqwest::blocking::{Client, Response};
 use reqwest::header::{CONTENT_RANGE, RANGE};
+use semver::Version;
+use serde::Deserialize;
 
 use super::build_info::{self, Channel};
 use super::error::UpdateError;
@@ -21,8 +23,8 @@ use crate::i18n::t;
 
 /// Where manifests and packages come from.
 pub trait UpdateFeed: Send + Sync {
-    /// The signed envelope for `channel`, as served.
-    fn fetch(&self, channel: Channel) -> Result<Vec<u8>, UpdateError>;
+    /// The signed envelope for `channel`, if a release offers one.
+    fn fetch(&self, channel: Channel) -> Result<Option<Vec<u8>>, UpdateError>;
 
     /// Download a package of `size` bytes into `dest`, trying `urls` in
     /// order. Bytes already in `dest`'s `.part` file are kept and the rest
@@ -47,11 +49,50 @@ pub fn part_path(dest: &Path) -> PathBuf {
 
 /// The largest manifest believed to be one.
 const MANIFEST_LIMIT: u64 = 1024 * 1024;
+const RELEASE_INDEX_LIMIT: u64 = 8 * MANIFEST_LIMIT;
+const RELEASES_PER_PAGE: usize = 100;
+
+enum ManifestSource {
+    /// A debug server's manifest address, with `{channel}` for the channel.
+    Direct(String),
+    GitHub {
+        api: String,
+        releases: String,
+    },
+}
+
+#[derive(Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+    assets: Vec<GitHubAsset>,
+}
+
+#[derive(Deserialize)]
+struct GitHubAsset {
+    name: String,
+}
+
+impl GitHubRelease {
+    fn version_for(self, channel: Channel) -> Option<Version> {
+        if self.draft
+            || (channel == Channel::Stable && self.prerelease)
+            || !self
+                .assets
+                .iter()
+                .any(|asset| asset.name == channel.manifest_name())
+        {
+            return None;
+        }
+        let version = Version::parse(self.tag_name.strip_prefix('v')?).ok()?;
+        (version.build.is_empty() && self.prerelease != version.pre.is_empty()).then_some(version)
+    }
+}
 
 /// The real feed, over HTTPS.
 pub struct HttpFeed {
-    /// The manifest's address, with `{channel}` for the channel.
-    manifest_url: String,
+    source: ManifestSource,
     /// How long a connection may stay silent, while connecting, waiting for
     /// an answer or in the middle of a download.
     patience: Duration,
@@ -68,15 +109,58 @@ impl HttpFeed {
         let override_url = cfg!(debug_assertions)
             .then(|| std::env::var("SHELLRS_UPDATE_URL").ok())
             .flatten();
-        Self::new(override_url.unwrap_or_else(|| build_info::MANIFEST_URL.to_string()))
+        match override_url {
+            Some(url) => Self::new(url),
+            None => Self::with_source(ManifestSource::GitHub {
+                api: build_info::RELEASES_API.into(),
+                releases: build_info::DOWNLOAD_PAGE.into(),
+            }),
+        }
     }
 
     pub fn new(manifest_url: String) -> Self {
+        Self::with_source(ManifestSource::Direct(manifest_url))
+    }
+
+    fn with_source(source: ManifestSource) -> Self {
         Self {
-            manifest_url,
+            source,
             patience: Duration::from_secs(30),
             system_proxy: true,
         }
+    }
+
+    fn github_manifest_url(
+        client: &Client,
+        api: &str,
+        releases: &str,
+        channel: Channel,
+    ) -> Result<Option<String>, UpdateError> {
+        // GitHub's order is not SemVer order. Beta may be newer than the
+        // latest stable, or a backport may have been published most recently.
+        let mut newest = None;
+        for page in 1.. {
+            let url = format!("{api}?per_page={RELEASES_PER_PAGE}&page={page}");
+            let entries: Vec<GitHubRelease> =
+                serde_json::from_slice(&read_body(client, &url, RELEASE_INDEX_LIMIT)?)
+                    .map_err(|error| UpdateError::BadManifest(error.to_string()))?;
+            let last_page = entries.len() < RELEASES_PER_PAGE;
+            newest = newest
+                .into_iter()
+                .chain(
+                    entries
+                        .into_iter()
+                        .filter_map(|release| release.version_for(channel)),
+                )
+                .max();
+            if last_page {
+                break;
+            }
+        }
+        // Construct the URL from the trusted repository and the parsed tag.
+        // The release index is discovery only; verify still checks the envelope.
+        Ok(newest
+            .map(|version| format!("{releases}/download/v{version}/{}", channel.manifest_name())))
     }
 
     /// Built on the worker thread, per job: the blocking client runs a
@@ -169,27 +253,16 @@ impl HttpFeed {
 }
 
 impl UpdateFeed for HttpFeed {
-    fn fetch(&self, channel: Channel) -> Result<Vec<u8>, UpdateError> {
+    fn fetch(&self, channel: Channel) -> Result<Option<Vec<u8>>, UpdateError> {
         let client = self.client()?;
-        let url = self.manifest_url.replace("{channel}", channel.key());
-        let response = client
-            .get(url)
-            .send()
-            .map_err(|error| UpdateError::Network(describe(&error)))?;
-        if !response.status().is_success() {
-            return Err(UpdateError::Http(response.status().as_u16()));
-        }
-        let mut body = Vec::new();
-        response
-            .take(MANIFEST_LIMIT + 1)
-            .read_to_end(&mut body)
-            .map_err(read_error)?;
-        if body.len() as u64 > MANIFEST_LIMIT {
-            return Err(UpdateError::BadManifest(
-                t!("update.feed.too_large").to_string(),
-            ));
-        }
-        Ok(body)
+        let url = match &self.source {
+            ManifestSource::Direct(url) => Some(url.replace("{channel}", channel.key())),
+            ManifestSource::GitHub { api, releases } => {
+                Self::github_manifest_url(&client, api, releases, channel)?
+            }
+        };
+        url.map(|url| read_body(&client, &url, MANIFEST_LIMIT))
+            .transpose()
     }
 
     fn download(
@@ -221,6 +294,27 @@ impl UpdateFeed for HttpFeed {
         }
         Err(last)
     }
+}
+
+fn read_body(client: &Client, url: &str, limit: u64) -> Result<Vec<u8>, UpdateError> {
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|error| UpdateError::Network(describe(&error)))?;
+    if !response.status().is_success() {
+        return Err(UpdateError::Http(response.status().as_u16()));
+    }
+    let mut body = Vec::new();
+    response
+        .take(limit + 1)
+        .read_to_end(&mut body)
+        .map_err(read_error)?;
+    if body.len() as u64 > limit {
+        return Err(UpdateError::BadManifest(
+            t!("update.feed.too_large").to_string(),
+        ));
+    }
+    Ok(body)
 }
 
 /// The first byte of a `206` answer, from `Content-Range: bytes 10-99/100`.
@@ -346,7 +440,7 @@ pub(crate) mod tests {
         /// A feed reading this server's `/{channel}.json`.
         pub(crate) fn feed(&self) -> HttpFeed {
             HttpFeed {
-                manifest_url: self.url("/{channel}.json"),
+                source: ManifestSource::Direct(self.url("/{channel}.json")),
                 patience: Duration::from_millis(500),
                 system_proxy: false,
             }
@@ -455,7 +549,7 @@ pub(crate) mod tests {
     fn the_manifest_is_fetched_with_the_shellrs_user_agent() {
         let server = Server::start();
         server.answer("/beta.json", Answer::Body(b"{}".to_vec()));
-        assert_eq!(server.feed().fetch(Channel::Beta), Ok(b"{}".to_vec()));
+        assert_eq!(server.feed().fetch(Channel::Beta), Ok(Some(b"{}".to_vec())));
         assert_eq!(
             server.feed().fetch(Channel::Stable),
             Err(UpdateError::Http(404))
@@ -469,6 +563,59 @@ pub(crate) mod tests {
                 .is_some_and(|agent| agent.starts_with("ShellRS/")),
             "{seen:?}"
         );
+    }
+
+    #[test]
+    fn github_selects_the_newest_manifest_for_each_channel_across_pages() {
+        let server = Server::start();
+        let feed = HttpFeed {
+            source: ManifestSource::GitHub {
+                api: server.url("/api/releases"),
+                releases: server.url("/releases"),
+            },
+            ..server.feed()
+        };
+        let release = |tag, draft, prerelease, names: &[&str]| {
+            serde_json::json!({
+                "tag_name": tag,
+                "draft": draft,
+                "prerelease": prerelease,
+                "assets": names.iter().map(|name| serde_json::json!({"name": name})).collect::<Vec<_>>(),
+            })
+        };
+        let mut page = vec![
+            release("v1.0.0", false, false, &["stable.json", "beta.json"]),
+            release("v9.0.0", true, false, &["stable.json", "beta.json"]),
+            release("v8.0.0", false, false, &["installer.exe"]),
+            release("v2.0.0-beta.9", false, true, &["beta.json"]),
+        ];
+        page.resize(RELEASES_PER_PAGE, release("other", false, false, &[]));
+        let first = "/api/releases?per_page=100&page=1";
+        let second = "/api/releases?per_page=100&page=2";
+        server.answer(first, Answer::Body(serde_json::to_vec(&page).unwrap()));
+        server.answer(
+            second,
+            Answer::Body(
+                serde_json::to_vec(&[
+                    release("v1.1.0", false, false, &["stable.json", "beta.json"]),
+                    release("v2.0.0-beta.10", false, true, &["beta.json"]),
+                ])
+                .unwrap(),
+            ),
+        );
+        server.answer(
+            "/releases/download/v1.1.0/stable.json",
+            Answer::Body(b"stable".to_vec()),
+        );
+        server.answer(
+            "/releases/download/v2.0.0-beta.10/beta.json",
+            Answer::Body(b"beta".to_vec()),
+        );
+        assert_eq!(feed.fetch(Channel::Stable), Ok(Some(b"stable".to_vec())));
+        assert_eq!(feed.fetch(Channel::Beta), Ok(Some(b"beta".to_vec())));
+
+        server.answer(first, Answer::Body(b"[]".to_vec()));
+        assert_eq!(feed.fetch(Channel::Stable), Ok(None));
     }
 
     #[test]

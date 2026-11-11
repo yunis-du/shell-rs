@@ -19,11 +19,14 @@ use objc2_app_kit::{
     NSApplication, NSFont, NSFontAttributeName, NSLinkAttributeName, NSMutableParagraphStyle,
     NSParagraphStyleAttributeName, NSTextAlignment,
 };
-use objc2_foundation::{NSAttributedString, NSDictionary, NSString, NSURL};
+use objc2_foundation::{
+    NSAttributedString, NSDictionary, NSMutableAttributedString, NSString, NSURL,
+};
 
 use super::shortcuts::AppliedShortcuts;
 use super::{
-    AboutApp, HideApp, HideOtherApps, MinimizeWindow, OpenSettings, Quit, ShowAllApps, ZoomWindow,
+    AboutApp, FORK_REPOSITORY, HideApp, HideOtherApps, MinimizeWindow, OpenSettings, Quit,
+    ShowAllApps, UPSTREAM_REPOSITORY, ZoomWindow,
 };
 use crate::i18n::{UiLocale, t};
 use crate::update::build_info::{VERSION, WEBSITE};
@@ -88,8 +91,8 @@ fn menus() -> Vec<Menu> {
     ]
 }
 
-/// The system's about panel: ShellRS's name, icon and version, and a link
-/// to the website. Given, not left to the system to read from the bundle:
+/// The system's about panel: ShellRS's name, icon, version and project credits.
+/// Given, not left to the system to read from the bundle:
 /// outside one (`cargo run`) it would show the executable's name, its
 /// folder's icon and no version.
 fn show_about_panel() {
@@ -102,7 +105,7 @@ fn show_about_panel() {
     // Empty, the build number in brackets after the version is left out:
     // the version is what 设置 › 关于 shows too.
     let build = NSString::from_str("");
-    let credits = website_link();
+    let credits = about_credits();
     let icon = app.applicationIconImage();
     // SAFETY: AppKit's constant keys, read on the main thread.
     let (name_key, version_key, build_key, credits_key, icon_key) = unsafe {
@@ -126,14 +129,11 @@ fn show_about_panel() {
     unsafe { app.orderFrontStandardAboutPanelWithOptions(&options) };
 }
 
-/// The panel's credits: the website's address, centered, opening it when
-/// clicked.
-fn website_link() -> Retained<NSAttributedString> {
-    let address = WEBSITE.trim_start_matches("https://");
+/// Center the credits and link each line to its project or website.
+fn about_credits() -> Retained<NSMutableAttributedString> {
     let paragraph = NSMutableParagraphStyle::new();
     paragraph.setAlignment(NSTextAlignment::Center);
     let font = NSFont::systemFontOfSize(NSFont::smallSystemFontSize());
-    let url = NSURL::URLWithString(&NSString::from_str(WEBSITE));
     // SAFETY: AppKit's constant keys, read on the main thread.
     let (paragraph_key, font_key, link_key) = unsafe {
         (
@@ -142,21 +142,39 @@ fn website_link() -> Retained<NSAttributedString> {
             NSLinkAttributeName,
         )
     };
-    let mut keys = vec![paragraph_key, font_key];
-    let mut values: Vec<&AnyObject> = vec![&paragraph, &font];
-    if let Some(url) = &url {
-        keys.push(link_key);
-        values.push(url);
+    let text = |label: &str, href: Option<&str>| {
+        let url = href.and_then(|href| NSURL::URLWithString(&NSString::from_str(href)));
+        let mut keys = vec![paragraph_key, font_key];
+        let mut values: Vec<&AnyObject> = vec![&paragraph, &font];
+        if let Some(url) = &url {
+            keys.push(link_key);
+            values.push(url);
+        }
+        let attributes = NSDictionary::from_slices(&keys, &values);
+        // SAFETY: each attribute holds the type AppKit documents for it.
+        unsafe {
+            NSAttributedString::initWithString_attributes(
+                NSAttributedString::alloc(),
+                &NSString::from_str(label),
+                Some(&attributes),
+            )
+        }
+    };
+    let credits = NSMutableAttributedString::new();
+    for (index, (label, href)) in [
+        (t!("app.about.fork_credit"), FORK_REPOSITORY),
+        (t!("app.about.upstream_credit"), UPSTREAM_REPOSITORY),
+        (t!("settings.about.website"), WEBSITE),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if index != 0 {
+            credits.appendAttributedString(&text("\n", None));
+        }
+        credits.appendAttributedString(&text(&label, Some(href)));
     }
-    let attributes = NSDictionary::from_slices(&keys, &values);
-    // SAFETY: each attribute holds the type AppKit documents for it.
-    unsafe {
-        NSAttributedString::initWithString_attributes(
-            NSAttributedString::alloc(),
-            &NSString::from_str(address),
-            Some(&attributes),
-        )
-    }
+    credits
 }
 
 /// Do `act` to the window in front, once the window the action came

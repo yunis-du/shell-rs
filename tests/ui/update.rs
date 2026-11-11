@@ -28,7 +28,7 @@ struct FakeUpdateFeed {
 }
 
 impl UpdateFeed for FakeUpdateFeed {
-    fn fetch(&self, channel: Channel) -> Result<Vec<u8>, UpdateError> {
+    fn fetch(&self, channel: Channel) -> Result<Option<Vec<u8>>, UpdateError> {
         self.fetches.fetch_add(1, Ordering::SeqCst);
         self.channels.lock().unwrap().push(channel);
         let offer = self
@@ -38,7 +38,14 @@ impl UpdateFeed for FakeUpdateFeed {
             .iter()
             .find(|(offered, _)| *offered == channel)
             .map_or(Err(UpdateError::Http(404)), |(_, offer)| offer.clone());
-        offer.map(|version| signed_manifest(&self.pair, channel, &version, &self.package))
+        offer.map(|version| {
+            Some(signed_manifest(
+                &self.pair,
+                channel,
+                &version,
+                &self.package,
+            ))
+        })
     }
 
     fn download(
@@ -263,11 +270,23 @@ fn serve_updates_as(
 }
 
 #[gpui_kit::test]
-fn the_about_page_opens_the_website(cx: &mut TestAppContext) {
+fn the_about_page_links_to_the_fork_and_original_project(cx: &mut TestAppContext) {
     let (handle, _) = open_workspace(cx);
     open_about_settings(cx, handle);
-    in_frame(cx, handle, |window, cx| window.click("open-website", cx));
-    assert_eq!(cx.opened_url().as_deref(), Some("https://shellrs.com"));
+    for (id, url) in [
+        (
+            "open-fork-repository",
+            "https://github.com/yunis-du/shell-rs",
+        ),
+        (
+            "open-upstream-repository",
+            "https://github.com/since2006/shell-rs",
+        ),
+        ("open-website", "https://shellrs.com"),
+    ] {
+        in_frame(cx, handle, |window, cx| window.click(id, cx));
+        assert_eq!(cx.opened_url().as_deref(), Some(url));
+    }
 }
 
 /// Open 设置 › 关于.
@@ -441,12 +460,11 @@ async fn the_update_dialog_links_the_changelog_and_restarts_into_the_new_version
         assert!(window.try_find("restart-to-update").is_some());
     });
 
-    // What changed is on the website's changelog, in the interface's
-    // language; the dialog stays.
+    // The fork's changelog follows the interface language; the dialog stays.
     in_frame(cx, handle, |window, cx| window.click("open-changelog", cx));
     assert_eq!(
         cx.opened_url().as_deref(),
-        Some("https://shellrs.com/zh/changelog")
+        Some("https://github.com/yunis-du/shell-rs/blob/main/CHANGELOG.zh.md")
     );
     let settings = cx.update(|cx| workspace.read(cx).settings().clone());
     cx.update(|cx| {
@@ -461,7 +479,7 @@ async fn the_update_dialog_links_the_changelog_and_restarts_into_the_new_version
     in_frame(cx, handle, |window, cx| window.click("open-changelog", cx));
     assert_eq!(
         cx.opened_url().as_deref(),
-        Some("https://shellrs.com/changelog")
+        Some("https://github.com/yunis-du/shell-rs/blob/main/CHANGELOG.md")
     );
     in_frame(cx, handle, |window, _| {
         assert!(window.try_find("update-dialog").is_some());
@@ -592,8 +610,6 @@ async fn a_portable_copy_downloads_the_portable_zip(cx: &mut TestAppContext) {
     })
     .await;
     assert_eq!(fixture.downloaded(), [vec![PORTABLE_PACKAGE.to_string()]]);
-    let install = cx.update(|cx| workspace.read(cx).updater().read(cx).install_type());
-    assert_eq!(install, "portable");
 }
 
 #[gpui_kit::test]
@@ -619,9 +635,6 @@ async fn a_read_only_portable_copy_links_the_portable_zip(cx: &mut TestAppContex
         window.click("open-download-page", cx)
     });
     assert_eq!(cx.opened_url().as_deref(), Some(PORTABLE_INSTALLER));
-    // Still counted as portable.
-    let install = cx.update(|cx| workspace.read(cx).updater().read(cx).install_type());
-    assert_eq!(install, "portable");
 }
 
 #[gpui_kit::test]

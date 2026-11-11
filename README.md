@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/since2006/shell-rs/releases"><img src="https://img.shields.io/github/v/release/since2006/shell-rs?include_prereleases&label=release" alt="Release"></a>
+  <a href="https://github.com/yunis-du/shell-rs/releases"><img src="https://img.shields.io/github/v/release/yunis-du/shell-rs?include_prereleases&label=release" alt="Release"></a>
   <a href="#license"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="License: GPL-3.0"></a>
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey" alt="Platform: macOS | Windows | Linux">
   <img src="https://img.shields.io/badge/rust-1.98-orange" alt="Rust 1.98">
@@ -96,7 +96,7 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 - Secrets stay in the system keychain. Host keys are recorded in ShellRS's own `known_hosts`, never in `~/.ssh`.
 - In-app updates: the update manifest is minisign-signed and each package is checked against its SHA-256. Updates download in the background and install on restart or quit. There are stable and beta channels, and an update check sends only the version, OS and CPU architecture.
-- Anonymous usage statistics: sent to Aptabase with only the version, OS, CPU architecture and how often each feature is used, never hosts, credentials, commands or any identifier. Turn them off in Settings › About.
+- ShellRS does not collect or send usage statistics. See [Privacy](docs/manual.md#privacy).
 
 ## Screenshots
 
@@ -122,7 +122,7 @@ Hosts, groups, credentials and forwarding rules live in a local SQLite database.
 
 ## Download
 
-Download from [shellrs.com/download](https://shellrs.com/download), which offers the package for your system, or from GitHub [Releases](https://github.com/since2006/shell-rs/releases). Betas are marked Pre-release there; to get new features early, switch the update channel to Beta in Settings › About.
+Download the package for your system from this fork’s [GitHub Releases](https://github.com/yunis-du/shell-rs/releases). Betas are marked Pre-release there; to get new features early, switch the update channel to Beta in Settings › About.
 
 | System | Package | Notes |
 | --- | --- | --- |
