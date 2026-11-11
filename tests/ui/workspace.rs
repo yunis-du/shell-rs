@@ -210,7 +210,7 @@ async fn quick_connect_finds_saved_hosts_and_connects_one(cx: &mut TestAppContex
     let group = store.insert_group_unnotified(GroupDraft::new("数据库", None));
     let [web, db, cache] = [
         ("web-01", "10.0.0.1", None),
-        ("db-01", "10.0.0.2", Some(group)),
+        ("root", "10.0.0.2", Some(group)),
         ("cache", "10.0.0.3", None),
     ]
     .map(|(name, address, group)| {
@@ -256,7 +256,7 @@ async fn quick_connect_finds_saved_hosts_and_connects_one(cx: &mut TestAppContex
         assert!(tops.is_sorted(), "{tops:?}");
         assert_eq!(
             window.find(row(db)).label(),
-            Some("db-01 · 数据库 · root@10.0.0.2:22")
+            Some("root · 数据库 · root@10.0.0.2:22")
         );
         // The search box has the keys: a group's name finds its hosts.
         window.input("数据", cx);
@@ -268,13 +268,25 @@ async fn quick_connect_finds_saved_hosts_and_connects_one(cx: &mut TestAppContex
     .await;
     in_frame(cx, handle, |window, cx| {
         assert!(window.try_find(row(db)).is_some());
+        window.press("secondary-a", cx);
+        window.input("ROOT", cx);
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, cx| {
+        window.render_frame(cx);
+        window.try_find(row(web)).is_some()
+    })
+    .await;
+    in_frame(cx, handle, |window, cx| {
+        // All three usernames match, but the exact name comes first.
+        let tops = [db, cache, web].map(|id| window.find(row(id)).bounds().top());
+        assert!(tops[0] < tops[1] && tops[1] < tops[2], "{tops:?}");
         window.press("enter", cx);
     });
     cx.wait_for(handle.into(), Duration::from_secs(2), |window, cx| {
         window.render_frame(cx);
         window
             .try_find(("terminal-tab", 1u64))
-            .is_some_and(|tab| tab.label() == Some("db-01"))
+            .is_some_and(|tab| tab.label() == Some("root"))
     })
     .await;
     in_frame(cx, handle, |window, _| {

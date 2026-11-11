@@ -18,6 +18,7 @@ ShellRS 由 [Xuz](https://github.com/since2006) 创建，本分支由 Yunis（@y
 
 ### 改进
 
+- 快速连接优先按主机名称匹配。搜索 `root` 时，即使其他主机也用 `root` 登录，名称为 `root` 的主机仍排在第一位。
 - 移除匿名使用统计。ShellRS 不再收集或发送使用统计。
 - 稳定版和 Beta 更新从本分支的 GitHub Releases 下载，并通过签名清单校验。
 

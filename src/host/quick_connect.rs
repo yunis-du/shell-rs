@@ -55,18 +55,39 @@ impl QuickHost {
     /// Whether every word of `query` is somewhere in the name, address,
     /// user, notes or group path, whatever the case.
     pub fn matches(&self, query: &str) -> bool {
-        let fields = [
-            &self.name,
-            &self.address,
-            &self.user,
-            &self.notes,
-            self.group.as_ref().unwrap_or(&self.name),
+        let query = query.trim().to_lowercase();
+        self.match_rank(&query, &query.split_whitespace().collect::<Vec<_>>())
+            .is_some()
+    }
+
+    fn match_rank(&self, query: &str, words: &[&str]) -> Option<MatchRank> {
+        let name = self.name.to_lowercase();
+        if name == query {
+            return Some(MatchRank::ExactName);
+        }
+        if name.starts_with(query) {
+            return Some(MatchRank::NamePrefix);
+        }
+        let words_in_name = words.iter().filter(|&&word| name.contains(word)).count();
+        if words_in_name == words.len() {
+            return Some(MatchRank::Name);
+        }
+
+        let details = [
+            self.address.as_ref(),
+            self.user.as_ref(),
+            self.notes.as_ref(),
+            self.group.as_deref().unwrap_or_default(),
         ]
-        .map(|field| field.to_lowercase());
-        query
-            .to_lowercase()
-            .split_whitespace()
-            .all(|word| fields.iter().any(|field| field.contains(word)))
+        .map(str::to_lowercase);
+        words
+            .iter()
+            .all(|&word| name.contains(word) || details.iter().any(|field| field.contains(word)))
+            .then_some(if words_in_name == 0 {
+                MatchRank::Details
+            } else {
+                MatchRank::NameAndDetails
+            })
     }
 
     /// The line under the name: the group, then where it logs in.
@@ -76,6 +97,15 @@ impl QuickHost {
             None => self.endpoint.to_string(),
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum MatchRank {
+    ExactName,
+    NamePrefix,
+    Name,
+    NameAndDetails,
+    Details,
 }
 
 /// The saved hosts, those connected to lately first (the latest first), then
@@ -134,11 +164,23 @@ impl QuickChoice {
         }
     }
 
-    /// Show the hosts `query` matches.
+    /// Put name matches first, keeping the initial order within each rank.
     pub fn search(&mut self, query: &str) {
-        self.shown = (0..self.hosts.len())
-            .filter(|ix| self.hosts[*ix].matches(query))
+        self.shown.clear();
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            self.shown.extend(0..self.hosts.len());
+            return;
+        }
+        let words: Vec<_> = query.split_whitespace().collect();
+        let mut ranked: Vec<_> = self
+            .hosts
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, host)| Some((host.match_rank(&query, &words)?, ix)))
             .collect();
+        ranked.sort_unstable();
+        self.shown.extend(ranked.into_iter().map(|(_, ix)| ix));
     }
 
     /// Highlight a row of what is shown.
@@ -515,6 +557,32 @@ mod tests {
         }
         for query in ["jenkins", "公司 jenkins"] {
             assert!(!host.matches(query), "{query:?}");
+        }
+    }
+
+    #[test]
+    fn names_outrank_other_fields_and_ties_keep_the_initial_order() {
+        let mut by_user = quick(1, "api");
+        by_user.user = "root".into();
+        let mut by_note = quick(5, "cache");
+        by_note.notes = "root".into();
+        let mut choice = QuickChoice::new(vec![
+            by_user,
+            quick(2, "db-root"),
+            quick(3, "root-prod"),
+            quick(4, "Root"),
+            by_note,
+        ]);
+        for (query, expected) in [
+            (" ROOT ", [4, 3, 2, 1, 5]),
+            ("root 166", [2, 3, 4, 1, 5]),
+            ("", [1, 2, 3, 4, 5]),
+        ] {
+            choice.search(query);
+            let ids: Vec<_> = (0..choice.shown_count())
+                .map(|row| choice.shown(row).unwrap().id.0)
+                .collect();
+            assert_eq!(ids, expected, "{query:?}");
         }
     }
 

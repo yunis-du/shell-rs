@@ -18,6 +18,7 @@ ShellRS was originally created by [Xuz](https://github.com/since2006). Yunis (@y
 
 ### Changed
 
+- Quick Connect ranks host names ahead of usernames and other fields. Searching for `root` highlights the host named `root` first, even when other hosts also log in as `root`.
 - ShellRS no longer collects or sends anonymous usage statistics.
 - Stable and Beta updates are downloaded from this fork’s GitHub Releases and checked against a signed manifest.
 
