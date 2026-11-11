@@ -12,8 +12,9 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::app::{
-    CatalogIcon, CenterTab, CloseTerminal, CopyHostAddress, CopyHostId, DisconnectTerminal,
-    DuplicateTerminal, EditHost, OpenExplorer, ReconnectTerminal, RenameTerminal, SendBreak,
+    CatalogIcon, CenterTab, CloseScope, CloseTabs, CloseTerminal, CopyHostAddress, CopyHostId,
+    DisconnectTerminal, DuplicateTerminal, EditHost, OpenExplorer, ReconnectTerminal,
+    RenameTerminal, SendBreak,
 };
 use crate::connection::{ConnectionPrompt, ConnectionPromptReply};
 use crate::host::{ConnectionState, Host, HostConnection, HostId, HostOs, HostStore, ProtocolKind};
@@ -64,6 +65,8 @@ pub struct TerminalPanel {
     /// Opened from a link (外部连接): nothing beside the terminal.
     external: bool,
     tab_group: Option<WeakEntity<TabGroup>>,
+    split_focus: Option<FocusHandle>,
+    moving_to_split: bool,
     broadcast: Option<super::BroadcastSelection>,
     /// A title the user gave this tab, to tell apart several connections to
     /// the same host. Lives as long as the tab, like the rest of the layout.
@@ -244,6 +247,8 @@ impl TerminalPanel {
             connection,
             external,
             tab_group: None,
+            split_focus: None,
+            moving_to_split: false,
             broadcast: None,
             custom_title: title,
             initial_directory: directory,
@@ -335,7 +340,7 @@ impl TerminalPanel {
         self.terminal.update(cx, |terminal, cx| {
             terminal.restart_with_factory(factory, cx)
         });
-        let focus = self.terminal.read(cx).focus_handle();
+        let focus = self.focus_handle(cx);
         window.focus(&focus, cx);
     }
 
@@ -384,9 +389,22 @@ impl TerminalPanel {
 impl EventEmitter<PanelEvent> for TerminalPanel {}
 impl EventEmitter<TerminalPanelEvent> for TerminalPanel {}
 
+impl TerminalPanel {
+    /// The dock is giving up this tab, but the terminal will live in a split.
+    pub(crate) fn move_to_split_on_removal(&mut self) {
+        self.moving_to_split = true;
+    }
+
+    pub(crate) fn set_split_focus(&mut self, focus: Option<FocusHandle>) {
+        self.split_focus = focus;
+    }
+}
+
 impl Focusable for TerminalPanel {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
-        self.terminal.read(cx).focus_handle()
+        self.split_focus
+            .clone()
+            .unwrap_or_else(|| self.terminal.read(cx).focus_handle())
     }
 }
 
@@ -395,9 +413,7 @@ impl BasePanel for TerminalPanel {
         "TerminalPanel"
     }
 
-    /// Closing goes through `CloseTerminal`; see `ClosableTabTitle`. Saying
-    /// no here also keeps the dock from adding a second 「关闭」 to the 「…」
-    /// menu, beside the tab's own close commands.
+    /// The tab's own close commands also handle any split panes.
     fn closable(&self, _: &App) -> bool {
         false
     }
@@ -406,7 +422,7 @@ impl BasePanel for TerminalPanel {
         if !active {
             return;
         }
-        let focus = self.terminal.read(cx).focus_handle();
+        let focus = self.focus_handle(cx);
         crate::app::focus_content(&focus, window, cx);
         cx.emit(TerminalPanelEvent::Activated(self.id, self.host_id));
     }
@@ -417,6 +433,9 @@ impl BasePanel for TerminalPanel {
 
     fn on_removed(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.tab_group = None;
+        if std::mem::take(&mut self.moving_to_split) {
+            return;
+        }
         self.terminal
             .update(cx, |terminal, cx| terminal.shutdown(cx));
         let id = self.host_id;
@@ -446,7 +465,14 @@ impl Panel for TerminalPanel {
         );
         ClosableTabTitle::new(("terminal-tab", id.0), mark, self.tab_title(cx))
             .connection_state(state)
-            .closable(("close-terminal", id.0), Box::new(CloseTerminal(id)))
+            .terminal_pane_target(CenterTab::Terminal(id))
+            .closable(
+                ("close-terminal", id.0),
+                Box::new(CloseTabs {
+                    tab: CenterTab::Terminal(id),
+                    scope: CloseScope::This,
+                }),
+            )
             .context_menu(move |menu, _, cx| tab_menu.build(menu, cx))
     }
 

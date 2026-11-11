@@ -1,6 +1,6 @@
 //! 设置 › 键盘快捷键, and the tab keys it lists.
 
-use gpui_kit::Keystroke;
+use gpui_kit::{Keystroke, point, px};
 use shellrs::app::{CenterTab, Shortcut};
 use shellrs::terminal::RemoteTerminalId;
 
@@ -31,6 +31,7 @@ fn terminal(id: u64) -> Option<CenterTab> {
 #[gpui_kit::test]
 fn split_shortcuts_open_terminals_on_the_requested_side_and_follow_focus(cx: &mut TestAppContext) {
     let (handle, workspace) = open_workspace(cx);
+    in_frame(cx, handle, |window, _| window.activate_window());
     in_frame(cx, handle, |window, cx| {
         window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
     });
@@ -43,7 +44,32 @@ fn split_shortcuts_open_terminals_on_the_requested_side_and_follow_focus(cx: &mu
         assert!(source.visible() && right.visible());
         assert!(source.bounds().right() <= right.bounds().left());
         assert_eq!(right.focused(), Some(true));
+        assert!(
+            window
+                .find(("dim-remote-pane", INITIAL_WEB_TERMINAL))
+                .visible()
+        );
+        assert!(
+            window
+                .try_find(("dim-remote-pane", FIRST_NEW_TERMINAL))
+                .is_none()
+        );
         assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 2);
+        window.click(("terminal", INITIAL_WEB_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(
+            window.find(("terminal", INITIAL_WEB_TERMINAL)).focused(),
+            Some(true)
+        );
+        assert!(
+            window
+                .find(("dim-remote-pane", FIRST_NEW_TERMINAL))
+                .visible()
+        );
+        window.click(("terminal", FIRST_NEW_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
         window.press(default_keys("split-terminal-down"), cx);
     });
     assert_eq!(active_tab(&workspace, cx), terminal(FIRST_NEW_TERMINAL + 1));
@@ -69,23 +95,33 @@ fn split_shortcuts_open_terminals_on_the_requested_side_and_follow_focus(cx: &mu
         assert!(surviving_pane.visible());
         assert_eq!(surviving_pane.focused(), Some(true));
         assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 2);
-        // The remaining pane can be closed from the keyboard immediately.
+        // Closing the original pane keeps its sibling in the same tab slot.
+        window.click(("terminal", INITIAL_WEB_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
         window.press(default_keys("close-tab"), cx);
     });
     in_frame(cx, handle, |window, cx| {
         assert!(
             window
-                .try_find(("terminal-tab", FIRST_NEW_TERMINAL))
+                .try_find(("terminal-tab", INITIAL_WEB_TERMINAL))
+                .is_none()
+        );
+        assert!(window.find(("terminal-tab", FIRST_NEW_TERMINAL)).visible());
+        assert_eq!(
+            window.find(("terminal", FIRST_NEW_TERMINAL)).focused(),
+            Some(true)
+        );
+        assert!(
+            window
+                .try_find(("dim-remote-pane", FIRST_NEW_TERMINAL))
                 .is_none()
         );
         assert_eq!(
-            window.find(("terminal", INITIAL_WEB_TERMINAL)).focused(),
-            Some(true)
-        );
-        assert_eq!(
             workspace.read(cx).active_tab(),
-            terminal(INITIAL_WEB_TERMINAL)
+            terminal(FIRST_NEW_TERMINAL)
         );
+        assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 1);
     });
 }
 
@@ -134,57 +170,358 @@ fn split_shortcuts_work_with_a_single_local_terminal_and_leave_other_views_alone
 }
 
 #[gpui_kit::test]
-fn splitting_a_local_terminal_right_leaves_its_remote_tab_in_the_original_group(
+fn splitting_one_tab_keeps_other_tabs_full_size_and_restores_its_focused_pane(
     cx: &mut TestAppContext,
 ) {
-    use shellrs::app::CloseTerminal;
-
     let (handle, workspace) = open_workspace(cx);
+    let full_bounds = in_frame(cx, handle, |window, cx| {
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+        window.find(("terminal", INITIAL_WEB_TERMINAL)).bounds()
+    });
     in_frame(cx, handle, |window, cx| {
+        window.click("new-local-terminal", cx);
+    });
+    for id in ["split-terminal-left", "split-terminal-down"] {
+        in_frame(cx, handle, |window, cx| window.press(default_keys(id), cx));
+    }
+    let original_width = in_frame(cx, handle, |window, cx| {
+        let left = window.find(("local-terminal", 1u64)).bounds();
+        let right = window.find(("local-terminal", 2u64)).bounds();
+        let divider = point((left.right() + right.left()) / 2., left.center().y);
+        window.drag(divider, divider + point(px(48.), px(0.)), cx);
+        left.size.width
+    });
+    let split_bounds = in_frame(cx, handle, |window, cx| {
+        let first = window.find(("local-terminal", 1u64)).bounds();
+        let second = window.find(("local-terminal", 2u64)).bounds();
+        let third = window.find(("local-terminal", 3u64)).bounds();
+        assert!(first.size.width > original_width);
+        assert!(first.right() <= second.left());
+        assert!(second.bottom() <= third.top());
+        assert!(window.try_find(("local-terminal-tab", 2u64)).is_none());
+        assert!(window.try_find(("local-terminal-tab", 3u64)).is_none());
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+        [first, second, third]
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(
+            window.find(("terminal", INITIAL_WEB_TERMINAL)).bounds(),
+            full_bounds
+        );
+        for id in 1..=3u64 {
+            assert!(window.try_find(("local-terminal", id)).is_none());
+        }
+        window.click(("local-terminal-tab", 1u64), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        for (id, bounds) in (1..=3u64).zip(split_bounds) {
+            assert_eq!(window.find(("local-terminal", id)).bounds(), bounds);
+        }
+        assert_eq!(window.find(("local-terminal", 3u64)).focused(), Some(true));
+        assert!(window.try_find(("dim-local-pane", 3u64)).is_none());
+        window.click(("close-local-terminal", 1u64), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        for id in 1..=3u64 {
+            assert!(
+                workspace
+                    .read(cx)
+                    .local_terminal(LocalTerminalId(id))
+                    .is_none()
+            );
+        }
+        assert!(
+            window
+                .find(("terminal-tab", INITIAL_WEB_TERMINAL))
+                .visible()
+        );
+    });
+}
+
+#[gpui_kit::test]
+async fn dragging_panes_between_tabs_keeps_their_running_connections(cx: &mut TestAppContext) {
+    use std::{
+        sync::{Arc, atomic::Ordering},
+        time::Duration,
+    };
+
+    let factory = Arc::new(FakeTerminalFactory::printing("kept output"));
+    let (handle, workspace) = open_workspace_with_terminals(
+        cx,
+        HostStore::seed(),
+        factory.clone(),
+        fake_serial_terminals(),
+    );
+    in_frame(cx, handle, |window, cx| {
+        window.activate_window();
         window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
     });
     in_frame(cx, handle, |window, cx| {
-        window.dispatch_action(
-            Box::new(CloseTerminal(RemoteTerminalId(INITIAL_STAGING_TERMINAL))),
+        window.press(default_keys("split-terminal-left"), cx);
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(3), |_, _| {
+        factory.starts.load(Ordering::SeqCst) == 3
+    })
+    .await;
+    let panel = workspace.read_with(cx, |workspace, _| {
+        workspace
+            .remote_terminal(RemoteTerminalId(FIRST_NEW_TERMINAL))
+            .unwrap()
+            .clone()
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(3), |_, cx| {
+        panel
+            .read(cx)
+            .terminal()
+            .read(cx)
+            .screen_text(cx)
+            .contains("kept output")
+    })
+    .await;
+    let staging = workspace.read_with(cx, |workspace, _| {
+        workspace
+            .remote_terminal(RemoteTerminalId(INITIAL_STAGING_TERMINAL))
+            .unwrap()
+            .clone()
+    });
+
+    in_frame(cx, handle, |window, cx| {
+        window.drag_to(
+            ("drag-remote-pane", FIRST_NEW_TERMINAL),
+            ("terminal-tab", INITIAL_STAGING_TERMINAL),
             cx,
         );
     });
     in_frame(cx, handle, |window, cx| {
-        window.click("new-local-terminal", cx)
-    });
-    let group_of_local = |id, cx: &mut TestAppContext| {
-        workspace.read_with(cx, |workspace, cx| {
+        let left = window.find(("terminal", INITIAL_STAGING_TERMINAL));
+        let right = window.find(("terminal", FIRST_NEW_TERMINAL));
+        assert!(left.bounds().right() <= right.bounds().left());
+        assert_eq!(right.focused(), Some(true));
+        assert!(
+            window
+                .try_find(("terminal", INITIAL_WEB_TERMINAL))
+                .is_none()
+        );
+        assert_eq!(
             workspace
-                .local_terminal(LocalTerminalId(id))
-                .unwrap()
                 .read(cx)
-                .tab_group()
+                .remote_terminal(RemoteTerminalId(FIRST_NEW_TERMINAL)),
+            Some(&panel)
+        );
+        assert!(
+            panel
+                .read(cx)
+                .terminal()
+                .read(cx)
+                .screen_text(cx)
+                .contains("kept output")
+        );
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(
+            window
+                .try_find(("drag-remote-pane", INITIAL_WEB_TERMINAL))
+                .is_none()
+        );
+        assert!(window.try_find(("terminal", FIRST_NEW_TERMINAL)).is_none());
+        window.click(("terminal-tab", INITIAL_STAGING_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        use gpui_kit::component::{
+            Placement,
+            dock::{DockPlacement, InsertTarget, PanelId},
+        };
+        // Place Staging alongside Web as if its whole tab had been dragged.
+        let area = workspace.read(cx).dock_area().clone();
+        area.update(cx, |area, cx| {
+            let staging = PanelId::from(staging.entity_id());
+            let node = area
+                .layout(DockPlacement::Center)
                 .unwrap()
-                .upgrade()
-                .unwrap()
-                .entity_id()
-        })
-    };
-    let original_group = group_of_local(1, cx);
+                .find_panel_node(staging)
+                .unwrap();
+            area.move_panel(
+                staging,
+                InsertTarget::Split {
+                    node,
+                    placement: Placement::Right,
+                    size: None,
+                },
+                window,
+                cx,
+            );
+        });
+    });
+    in_frame(cx, handle, |window, cx| {
+        // The original pane can leave its tab too. Drop it below Web.
+        let from = window
+            .find(("drag-remote-pane", INITIAL_STAGING_TERMINAL))
+            .bounds()
+            .center();
+        let web = window.find(("terminal", INITIAL_WEB_TERMINAL)).bounds();
+        window.drag(from, point(web.center().x, web.bottom() - px(8.)), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        let web = window.find(("terminal", INITIAL_WEB_TERMINAL));
+        let moved = window.find(("terminal", INITIAL_STAGING_TERMINAL));
+        assert!(web.bounds().bottom() <= moved.bounds().top());
+        assert!(window.find(("terminal", FIRST_NEW_TERMINAL)).visible());
+        assert_eq!(
+            window
+                .find(("terminal", INITIAL_STAGING_TERMINAL))
+                .focused(),
+            Some(true)
+        );
+        assert!(window.find(("terminal-tab", FIRST_NEW_TERMINAL)).visible());
+        assert!(
+            window
+                .try_find(("terminal-tab", INITIAL_STAGING_TERMINAL))
+                .is_none()
+        );
+        assert_eq!(
+            workspace
+                .read(cx)
+                .remote_terminal(RemoteTerminalId(INITIAL_STAGING_TERMINAL)),
+            Some(&staging)
+        );
+        assert_eq!(factory.starts.load(Ordering::SeqCst), 3);
+    });
+}
+
+#[gpui_kit::test]
+fn hovering_another_tab_reveals_it_and_previews_each_drop_side(cx: &mut TestAppContext) {
+    use gpui_kit::{MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PlatformInput};
+
+    let (handle, _) = open_workspace_with_store(cx, HostStore::empty());
+    for _ in 0..2 {
+        in_frame(cx, handle, |window, cx| {
+            window.click("new-local-terminal", cx)
+        });
+    }
     in_frame(cx, handle, |window, cx| {
         window.press(default_keys("split-terminal-left"), cx);
     });
-    assert_eq!(group_of_local(1, cx), original_group);
-    assert_ne!(group_of_local(2, cx), original_group);
+    let drag_move = |window: &mut gpui_kit::Window, position, cx: &mut App| {
+        window.dispatch_event(
+            PlatformInput::MouseMove(MouseMoveEvent {
+                position,
+                pressed_button: Some(MouseButton::Left),
+                modifiers: Default::default(),
+            }),
+            cx,
+        );
+    };
     in_frame(cx, handle, |window, cx| {
-        let original = window.find(("local-terminal", 1u64));
-        let new = window.find(("local-terminal", 2u64));
-        let remote_tab = window.find(("terminal-tab", INITIAL_WEB_TERMINAL));
-        assert!(original.bounds().right() <= new.bounds().left());
-        assert!(remote_tab.bounds().right() <= new.bounds().left());
-        assert_eq!(new.focused(), Some(true));
-        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+        let from = window.find(("drag-local-pane", 3u64)).bounds().center();
+        let tab = window.find(("local-terminal-tab", 1u64)).bounds().center();
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Left,
+                position: from,
+                modifiers: Default::default(),
+                click_count: 1,
+                first_mouse: false,
+            }),
+            cx,
+        );
+        drag_move(window, from + point(px(8.), px(0.)), cx);
+        drag_move(window, tab, cx);
+    });
+    let bounds = in_frame(cx, handle, |window, cx| {
+        assert!(cx.has_active_drag(), "hovering does not finish the drag");
+        assert!(window.find(("local-terminal", 1u64)).visible());
+        assert!(
+            window.try_find(("local-terminal", 3u64)).is_none(),
+            "the pane hasn't moved yet"
+        );
+        window.find("terminal-tab-drop-target").bounds()
+    });
+    let positions = [
+        (
+            "pane-drop-left",
+            point(bounds.left() + px(16.), bounds.center().y),
+        ),
+        (
+            "pane-drop-right",
+            point(bounds.right() - px(16.), bounds.center().y),
+        ),
+        (
+            "pane-drop-top",
+            point(bounds.center().x, bounds.top() + px(16.)),
+        ),
+        (
+            "pane-drop-bottom",
+            point(bounds.center().x, bounds.bottom() - px(16.)),
+        ),
+    ];
+    for (side, position) in positions {
+        in_frame(cx, handle, |window, cx| drag_move(window, position, cx));
+        in_frame(cx, handle, |window, _| {
+            for (id, _) in positions {
+                let preview = window.find(id);
+                assert_eq!(
+                    preview.visible(),
+                    id == side,
+                    "preview: {id}, pointer: {side}"
+                );
+                if id == side {
+                    let half = preview.bounds();
+                    assert!(bounds.contains(&half.center()));
+                    let center = bounds.center();
+                    let offset = match side {
+                        "pane-drop-left" => half.right() - center.x,
+                        "pane-drop-right" => half.left() - center.x,
+                        "pane-drop-top" => half.bottom() - center.y,
+                        _ => half.top() - center.y,
+                    };
+                    // A split through a fractional pixel is snapped to the device grid.
+                    assert!(offset.abs() <= px(1.));
+                }
+            }
+        });
+    }
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                button: MouseButton::Left,
+                position: positions[3].1,
+                modifiers: Default::default(),
+                click_count: 1,
+            }),
+            cx,
+        );
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(!cx.has_active_drag());
+        assert!(window.try_find("pane-drop-bottom").is_none());
+        let above = window.find(("local-terminal", 1u64));
+        let below = window.find(("local-terminal", 3u64));
+        assert!(above.bounds().bottom() <= below.bounds().top());
+        assert_eq!(below.focused(), Some(true));
+    });
+}
+
+#[gpui_kit::test]
+fn dragging_a_pane_to_another_panes_edge_rearranges_the_current_tab(cx: &mut TestAppContext) {
+    let (handle, _) = open_workspace_with_store(cx, HostStore::empty());
+    in_frame(cx, handle, |window, cx| {
+        window.click("new-local-terminal", cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.press(default_keys("split-terminal-left"), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        let from = window.find(("drag-local-pane", 2u64)).bounds().center();
+        let left = window.find(("local-terminal-pane", 1u64)).bounds();
+        window.drag(from, point(left.left() + px(8.), left.center().y), cx);
     });
     in_frame(cx, handle, |window, _| {
-        let remote = window.find(("terminal", INITIAL_WEB_TERMINAL));
-        let new = window.find(("local-terminal", 2u64));
-        assert!(remote.bounds().right() <= new.bounds().left());
-        assert!(window.try_find(("local-terminal", 1u64)).is_none());
+        let first = window.find(("local-terminal", 1u64));
+        let second = window.find(("local-terminal", 2u64));
+        assert!(second.bounds().right() <= first.bounds().left());
+        assert_eq!(second.focused(), Some(true));
+        assert!(window.find(("local-terminal-tab", 1u64)).visible());
     });
 }
 

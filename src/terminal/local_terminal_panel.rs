@@ -13,7 +13,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use regex::Regex;
 
-use crate::app::{CatalogIcon, CenterTab, CloseLocalTerminal, RestartLocalTerminal};
+use crate::app::{CatalogIcon, CenterTab, CloseScope, CloseTabs, RestartLocalTerminal};
 use crate::i18n::t;
 use crate::shared::{ClosableTabTitle, close_tab_items};
 
@@ -54,6 +54,8 @@ pub struct LocalTerminalPanel {
     name: Option<SavedName>,
     terminal: Entity<TerminalView>,
     tab_group: Option<WeakEntity<TabGroup>>,
+    split_focus: Option<FocusHandle>,
+    moving_to_split: bool,
     broadcast: Option<super::BroadcastSelection>,
     _subscriptions: Vec<Subscription>,
 }
@@ -109,6 +111,8 @@ impl LocalTerminalPanel {
             name,
             terminal,
             tab_group: None,
+            split_focus: None,
+            moving_to_split: false,
             broadcast: None,
             _subscriptions: subscriptions,
         }
@@ -124,6 +128,10 @@ impl LocalTerminalPanel {
 
     pub fn tab_group(&self) -> Option<WeakEntity<TabGroup>> {
         self.tab_group.clone()
+    }
+
+    pub(crate) fn id(&self) -> LocalTerminalId {
+        self.id
     }
 
     pub fn terminal(&self) -> &Entity<TerminalView> {
@@ -161,7 +169,7 @@ impl LocalTerminalPanel {
         self.terminal.update(cx, |terminal, cx| {
             terminal.restart_with_factory(factory, cx)
         });
-        let focus = self.terminal.read(cx).focus_handle();
+        let focus = self.focus_handle(cx);
         window.focus(&focus, cx);
     }
 
@@ -197,9 +205,22 @@ impl LocalTerminalPanel {
 impl EventEmitter<PanelEvent> for LocalTerminalPanel {}
 impl EventEmitter<LocalTerminalPanelEvent> for LocalTerminalPanel {}
 
+impl LocalTerminalPanel {
+    /// The dock is giving up this tab, but the terminal will live in a split.
+    pub(crate) fn move_to_split_on_removal(&mut self) {
+        self.moving_to_split = true;
+    }
+
+    pub(crate) fn set_split_focus(&mut self, focus: Option<FocusHandle>) {
+        self.split_focus = focus;
+    }
+}
+
 impl Focusable for LocalTerminalPanel {
     fn focus_handle(&self, cx: &App) -> FocusHandle {
-        self.terminal.read(cx).focus_handle()
+        self.split_focus
+            .clone()
+            .unwrap_or_else(|| self.terminal.read(cx).focus_handle())
     }
 }
 
@@ -208,16 +229,14 @@ impl BasePanel for LocalTerminalPanel {
         "LocalTerminalPanel"
     }
 
-    /// Closing goes through `CloseLocalTerminal`; see `ClosableTabTitle`.
-    /// Saying no here also keeps the dock from adding a second 「关闭」 to the
-    /// 「…」 menu, beside the tab's own close commands.
+    /// The tab's own close commands also handle any split panes.
     fn closable(&self, _: &App) -> bool {
         false
     }
 
     fn set_active(&mut self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
         if active {
-            let focus = self.terminal.read(cx).focus_handle();
+            let focus = self.focus_handle(cx);
             crate::app::focus_content(&focus, window, cx);
             cx.emit(LocalTerminalPanelEvent::Activated(self.id));
         }
@@ -229,6 +248,9 @@ impl BasePanel for LocalTerminalPanel {
 
     fn on_removed(&mut self, _: &mut Window, cx: &mut Context<Self>) {
         self.tab_group = None;
+        if std::mem::take(&mut self.moving_to_split) {
+            return;
+        }
         self.terminal
             .update(cx, |terminal, cx| terminal.shutdown(cx));
         cx.emit(LocalTerminalPanelEvent::Closed(self.id));
@@ -249,9 +271,13 @@ impl Panel for LocalTerminalPanel {
             mark,
             self.display_title(cx),
         )
+        .terminal_pane_target(CenterTab::LocalTerminal(id))
         .closable(
             ("close-local-terminal", self.id.0),
-            Box::new(CloseLocalTerminal(self.id)),
+            Box::new(CloseTabs {
+                tab: CenterTab::LocalTerminal(id),
+                scope: CloseScope::This,
+            }),
         )
         .context_menu(move |menu, _, cx| tab_menu(menu, id, group.clone(), panel, cx))
     }

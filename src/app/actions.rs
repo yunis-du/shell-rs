@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use gpui_kit::component::{Icon, IconName};
+use gpui_kit::component::{Icon, IconName, Placement};
 use gpui_kit::*;
 use shellrs_sync::DeviceId;
 
@@ -180,7 +180,7 @@ gpui_kit::actions!(
         ExpandAllGroups,
         /// Collapse every group in the host tree.
         CollapseAllGroups,
-        /// Close the center tab displayed most recently (the one ⌘W acts on).
+        /// Close the center tab in front, or its active terminal pane.
         CloseActiveTab,
         /// Show the tab after the current one in its group, the first after
         /// the last.
@@ -550,7 +550,7 @@ pub(crate) struct RunQuickSnippet {
 }
 
 /// One tab of the center area, by the identity of what it shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum CenterTab {
     Terminal(RemoteTerminalId),
     Explorer(ExplorerId),
@@ -558,6 +558,25 @@ pub enum CenterTab {
     /// There is at most one settings tab.
     Settings,
     Editor(EditorId),
+}
+
+/// Reveal a terminal tab under an ongoing pane drag.
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = shellrs, no_json)]
+pub(crate) struct ShowTerminalPaneDropTab(pub(crate) CenterTab);
+
+/// Move a running terminal from a split to a tab or beside a specific pane.
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = shellrs, no_json)]
+pub(crate) struct MoveTerminalPane {
+    pub(crate) source: CenterTab,
+    pub(crate) destination: TerminalPaneDestination,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TerminalPaneDestination {
+    Tab(CenterTab),
+    Beside(CenterTab, Placement),
 }
 
 /// Select one connected terminal for interactive input broadcast.
@@ -690,6 +709,7 @@ impl ToolKind {
 /// Which tabs of a tab bar a batch close takes, relative to one tab.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloseScope {
+    This,
     Left,
     Right,
     Others,
@@ -702,6 +722,7 @@ impl CloseScope {
     /// decides to disable the command.
     pub fn targets(self, len: usize, ix: usize) -> Vec<usize> {
         match self {
+            CloseScope::This => (ix < len).then_some(ix).into_iter().collect(),
             CloseScope::Left => (0..ix.min(len)).collect(),
             CloseScope::Right => (ix + 1..len).collect(),
             CloseScope::Others => (0..len).filter(|&other| other != ix).collect(),
@@ -710,7 +731,7 @@ impl CloseScope {
     }
 }
 
-/// Close several tabs of the tab bar that holds `tab`, each through its own
+/// Close tabs of the tab bar that holds `tab`, each through its own
 /// close path.
 #[derive(Action, Clone, PartialEq, Eq)]
 #[action(namespace = shellrs, no_json)]

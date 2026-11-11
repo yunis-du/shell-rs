@@ -203,16 +203,13 @@ impl Workspace {
     /// with whatever else is there; the others are gathered there first, so
     /// that every arrangement starts alike, then split out of it.
     fn arrange_broadcast(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let mut seen = std::collections::HashSet::new();
         let panels: Vec<PanelId> = self
             .broadcast
             .selected
             .iter()
-            .filter_map(|(tab, _)| match tab {
-                CenterTab::Terminal(id) => Some(self.terminals.get(id)?.entity_id()),
-                CenterTab::LocalTerminal(id) => Some(self.local_terminals.get(id)?.entity_id()),
-                _ => None,
-            })
-            .map(PanelId::from)
+            .filter_map(|(tab, _)| self.center_tab_location(*tab, cx).map(|(_, panel)| panel))
+            .filter(|panel| seen.insert(*panel))
             .collect();
         let Some((&first, rest)) = panels.split_first() else {
             return;
@@ -262,20 +259,11 @@ impl Workspace {
             }
         });
         // The first in front of the tabs it shares its group with.
-        match self.broadcast.selected.first().map(|(tab, _)| *tab) {
-            Some(CenterTab::Terminal(id)) => {
-                if let Some(panel) = self.terminals.get(&id).cloned() {
-                    let group = panel.read(cx).tab_group();
-                    self.activate_tab(group, panel.entity_id(), window, cx);
-                }
-            }
-            Some(CenterTab::LocalTerminal(id)) => {
-                if let Some(panel) = self.local_terminals.get(&id).cloned() {
-                    let group = panel.read(cx).tab_group();
-                    self.activate_tab(group, panel.entity_id(), window, cx);
-                }
-            }
-            _ => {}
+        if let Some(&(tab, _)) = self.broadcast.selected.first()
+            && let Some((group, panel)) = self.center_tab_location(tab, cx)
+        {
+            self.select_terminal_pane(tab, cx);
+            self.select_center_panel(&group, panel, window, cx);
         }
     }
 

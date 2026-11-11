@@ -27,6 +27,7 @@ mod status_bar;
 mod sync;
 mod tabs;
 mod terminal_groups;
+mod terminal_panes;
 mod title_bar;
 mod tmux;
 mod tool_sidebar;

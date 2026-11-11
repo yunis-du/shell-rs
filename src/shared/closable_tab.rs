@@ -1,4 +1,6 @@
-use std::rc::Rc;
+use std::{cell::Cell, rc::Rc};
+
+use gpui_kit::base::ElementExt as _;
 
 use gpui_kit::component::{
     ActiveTheme as _, IconName, Sizable as _,
@@ -9,11 +11,36 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::app::ToggleHostPanel;
+use crate::app::{
+    CenterTab, MoveTerminalPane, ShowTerminalPaneDropTab, TerminalPaneDestination, ToggleHostPanel,
+};
 use crate::host::ConnectionState;
 use crate::i18n::t;
 
 type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
+
+/// A live pane is distinct from the dock's whole-tab drag.
+#[derive(Clone)]
+pub(crate) struct TerminalPaneDrag {
+    pub(crate) pane: CenterTab,
+    pub(crate) tab: CenterTab,
+    pub(crate) title: SharedString,
+}
+
+impl Render for TerminalPaneDrag {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .max_w(rems(18.))
+            .px_2()
+            .py_1()
+            .rounded(cx.theme().radius)
+            .bg(cx.theme().popover)
+            .text_color(cx.theme().popover_foreground)
+            .text_sm()
+            .truncate()
+            .child(self.title.clone())
+    }
+}
 
 /// A dock tab title: a leading mark, the label and, for closable panels, a
 /// close button that dispatches the panel's close action. A panel may also
@@ -40,6 +67,7 @@ pub struct ClosableTabTitle {
     menu: Option<MenuBuilder>,
     modified: bool,
     connection_state: Option<ConnectionState>,
+    terminal_drop: Option<CenterTab>,
 }
 
 impl ClosableTabTitle {
@@ -58,6 +86,7 @@ impl ClosableTabTitle {
             menu: None,
             modified: false,
             connection_state: None,
+            terminal_drop: None,
         }
     }
 
@@ -75,6 +104,11 @@ impl ClosableTabTitle {
     /// as editors do.
     pub fn modified(mut self, modified: bool) -> Self {
         self.modified = modified;
+        self
+    }
+
+    pub(crate) fn terminal_pane_target(mut self, tab: CenterTab) -> Self {
+        self.terminal_drop = Some(tab);
         self
     }
 
@@ -161,6 +195,39 @@ impl RenderOnce for ClosableTabTitle {
                         window.dispatch_action(action.boxed_clone(), cx);
                     }
                 })
+            })
+            .when_some(self.terminal_drop, |title, tab| {
+                let visible_bounds = Rc::new(Cell::new(Bounds::default()));
+                title
+                    .on_prepaint({
+                        let visible_bounds = visible_bounds.clone();
+                        move |bounds, window, _| {
+                            visible_bounds.set(bounds.intersect(&window.content_mask().bounds));
+                        }
+                    })
+                    .on_drag_move(move |event: &DragMoveEvent<TerminalPaneDrag>, window, cx| {
+                        if visible_bounds.get().contains(&event.event.position) {
+                            window.dispatch_action(Box::new(ShowTerminalPaneDropTab(tab)), cx);
+                        }
+                    })
+                    .drag_over::<TerminalPaneDrag>(move |style, drag, _, cx| {
+                        if drag.tab == tab {
+                            style
+                        } else {
+                            style.bg(cx.theme().accent).rounded(cx.theme().radius)
+                        }
+                    })
+                    .on_drop(move |drag: &TerminalPaneDrag, window, cx| {
+                        if drag.tab != tab {
+                            window.dispatch_action(
+                                Box::new(MoveTerminalPane {
+                                    source: drag.pane,
+                                    destination: TerminalPaneDestination::Tab(tab),
+                                }),
+                                cx,
+                            );
+                        }
+                    })
             })
             .test_support()
             .aria_label(self.label)

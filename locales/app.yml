@@ -110,8 +110,8 @@ app.shortcut.new_local_terminal:
   zh-CN: 新建本地终端
   en: New local terminal
 app.shortcut.close_tab:
-  zh-CN: 关闭标签
-  en: Close tab
+  zh-CN: 关闭标签页或终端窗格
+  en: Close tab or terminal pane
 app.shortcut.next_tab:
   zh-CN: 下一个标签
   en: Next tab

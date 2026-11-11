@@ -62,7 +62,7 @@ impl Workspace {
             })
             .or_else(|| visible.first().copied());
         if let Some(next) = next {
-            self.set_active_tab(Some(next), window, cx);
+            self.set_active_tab(Some(self.selected_terminal_pane(next, cx)), window, cx);
             self.focus_center(window, cx);
         }
         // When no tabs remain, on_layout_changed focuses the start page.
@@ -72,6 +72,13 @@ impl Workspace {
     /// zoomed group's.
     pub(super) fn visible_center_tabs(&self, cx: &App) -> Vec<CenterTab> {
         self.selected_tabs(self.dock_area.read(cx).zoomed_group(), cx)
+            .into_iter()
+            .flat_map(|tab| {
+                self.split_tabs
+                    .get(&tab)
+                    .map_or_else(|| vec![tab], |panes| panes.read(cx).terminals())
+            })
+            .collect()
     }
 
     /// The tab selected in every group, even those hidden by dock zoom.
@@ -115,7 +122,8 @@ impl Workspace {
             CenterTab::Terminal(id) => self.terminals.contains_key(&id),
             CenterTab::Explorer(id) => self.explorers.contains_key(&id),
             CenterTab::Editor(id) => self.editors.contains_key(&id),
-            CenterTab::LocalTerminal(_) | CenterTab::Settings => true,
+            CenterTab::LocalTerminal(id) => self.local_terminals.contains_key(&id),
+            CenterTab::Settings => true,
         };
         if !open {
             return;

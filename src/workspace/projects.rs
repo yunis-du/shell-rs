@@ -264,13 +264,14 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(tab) = self.tab_of(id)
-            && let Some(panel) = self.local_terminals.get(&tab).cloned()
+        if let Some(tab) = self.tab_of(id).map(CenterTab::LocalTerminal)
+            && let Some((group, panel)) = self.center_tab_location(tab, cx)
         {
-            let group = panel.read(cx).tab_group();
-            self.activate_tab(group, panel.entity_id(), window, cx);
-            let focus = panel.read(cx).focus_handle(cx);
-            crate::app::focus_content(&focus, window, cx);
+            self.select_terminal_pane(tab, cx);
+            self.select_center_panel(&group, panel, window, cx);
+            if let Some(focus) = self.tab_focus_handle(tab, cx) {
+                crate::app::focus_content(&focus, window, cx);
+            }
             return;
         }
         if let Some(terminal) = self.store.read(cx).saved_terminal(id).cloned() {
@@ -390,8 +391,14 @@ impl Workspace {
         }
         let tabs: Vec<SavedTerminalTab> = order
             .into_iter()
-            .filter_map(|panel| match self.center_tab_for_panel(panel) {
-                Some(CenterTab::LocalTerminal(tab)) => Some(SavedTerminalTab {
+            .filter_map(|panel| self.center_tab_for_panel(panel))
+            .flat_map(|tab| {
+                self.split_tabs
+                    .get(&tab)
+                    .map_or_else(|| vec![tab], |panes| panes.read(cx).terminals())
+            })
+            .filter_map(|tab| match tab {
+                CenterTab::LocalTerminal(tab) => Some(SavedTerminalTab {
                     terminal: *self.saved_terminals.get(&tab)?,
                     front: self.front_saved_terminal == Some(tab),
                 }),

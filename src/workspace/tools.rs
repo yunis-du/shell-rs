@@ -211,6 +211,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some(tab) = tab {
+            self.select_terminal_pane(tab, cx);
+        }
         self.active_tab = tab;
         if let Some(target) = tab.and_then(ToolTarget::of) {
             self.tool_target_choice = Some(target);

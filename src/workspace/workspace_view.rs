@@ -180,6 +180,7 @@ pub struct Workspace {
     /// 目录跟随: what each terminal's current connection was found to be.
     pub(super) directory_follow: HashMap<RemoteTerminalId, super::follow::FollowState>,
     pub(super) local_terminals: HashMap<LocalTerminalId, Entity<LocalTerminalPanel>>,
+    pub(super) split_tabs: HashMap<CenterTab, Entity<super::terminal_panes::TerminalPanes>>,
     /// The local terminals kept in 项目, by the tab each is open in.
     pub(super) saved_terminals: HashMap<LocalTerminalId, SavedTerminalId>,
     /// The saved terminal's tab in front last, for the next launch to put
@@ -719,6 +720,7 @@ impl Workspace {
             file_sidebars: HashMap::new(),
             directory_follow: HashMap::new(),
             local_terminals,
+            split_tabs: HashMap::new(),
             saved_terminals,
             front_saved_terminal,
             settings_tab: None,
@@ -960,7 +962,7 @@ impl Workspace {
             CenterTab::Terminal(id) => self
                 .terminals
                 .get(&id)
-                .map(|panel| panel.read(cx).focus_handle(cx)),
+                .map(|panel| panel.read(cx).terminal().read(cx).focus_handle()),
             CenterTab::Explorer(id) => self
                 .explorers
                 .get(&id)
@@ -968,7 +970,7 @@ impl Workspace {
             CenterTab::LocalTerminal(id) => self
                 .local_terminals
                 .get(&id)
-                .map(|panel| panel.read(cx).focus_handle(cx)),
+                .map(|panel| panel.read(cx).terminal().read(cx).focus_handle()),
             CenterTab::Settings => self
                 .settings_tab
                 .as_ref()
@@ -1382,6 +1384,18 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<RemoteTerminalId> {
+        let id = self.new_remote_pane(host_id, copy, window, cx)?;
+        self.dock_terminal(CenterTab::Terminal(id), window, cx);
+        Some(id)
+    }
+
+    pub(super) fn new_remote_pane(
+        &mut self,
+        host_id: HostId,
+        copy: Option<TerminalCopy>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<RemoteTerminalId> {
         self.store.read(cx).host(host_id)?;
         let terminal_id = RemoteTerminalId(self.next_remote_terminal_id);
         self.next_remote_terminal_id += 1;
@@ -1402,10 +1416,7 @@ impl Workspace {
             window,
             cx,
         ));
-        self.terminals.insert(terminal_id, panel.clone());
-        self.dock_area.update(cx, |area, cx| {
-            area.add_panel_view(panel_handle(panel), DockPlacement::Center, None, window, cx);
-        });
+        self.terminals.insert(terminal_id, panel);
         Some(terminal_id)
     }
 
@@ -1476,6 +1487,17 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> LocalTerminalId {
+        let id = self.new_local_pane(saved, window, cx);
+        self.dock_terminal(CenterTab::LocalTerminal(id), window, cx);
+        id
+    }
+
+    pub(super) fn new_local_pane(
+        &mut self,
+        saved: Option<&SavedTerminal>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> LocalTerminalId {
         let id = LocalTerminalId(self.next_local_terminal_id);
         self.next_local_terminal_id += 1;
         let factory = self.local_terminal_factory(saved, true, cx);
@@ -1489,13 +1511,10 @@ impl Workspace {
             window,
             cx,
         ));
-        self.local_terminals.insert(id, panel.clone());
+        self.local_terminals.insert(id, panel);
         if let Some(saved) = saved {
             self.saved_terminals.insert(id, saved.id);
         }
-        self.dock_area.update(cx, |area, cx| {
-            area.add_panel_view(panel_handle(panel), DockPlacement::Center, None, window, cx);
-        });
         id
     }
 
@@ -1674,9 +1693,18 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(group) = group.and_then(|group| group.upgrade()) else {
-            return;
-        };
+        if let Some(group) = group.and_then(|group| group.upgrade()) {
+            self.select_center_panel(&group, PanelId::from(panel), window, cx);
+        }
+    }
+
+    pub(super) fn select_center_panel(
+        &self,
+        group: &Entity<TabGroup>,
+        target: PanelId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Dock's select_tab takes focus synchronously. An external link or
         // notification may select a tab while a dialog owns the keyboard.
         let focus = if crate::app::content_focus_blocked(window, cx) {
@@ -1685,7 +1713,6 @@ impl Workspace {
             None
         };
         group.update(cx, |group, cx| {
-            let target = PanelId::from(panel);
             if let Some(ix) = group
                 .panels()
                 .iter()
@@ -1734,6 +1761,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.remove_split_pane(CenterTab::Terminal(id), window, cx) {
+            return;
+        }
         if let Some(panel) = self.terminals.get(&id).cloned() {
             self.remove_center_panel(panel, window, cx);
         }
@@ -1911,6 +1941,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.remove_split_pane(CenterTab::LocalTerminal(action.0), window, cx) {
+            return;
+        }
         if let Some(panel) = self.local_terminals.get(&action.0).cloned() {
             self.remove_center_panel(panel, window, cx);
         }
@@ -1952,7 +1985,7 @@ impl Workspace {
         tab: CenterTab,
         cx: &App,
     ) -> Option<(Entity<TabGroup>, PanelId)> {
-        let (group, entity) = match tab {
+        let (group, entity) = match self.split_tab_owner(tab, cx).unwrap_or(tab) {
             CenterTab::Terminal(id) => {
                 let panel = self.terminals.get(&id)?;
                 (panel.read(cx).tab_group(), panel.entity_id())
@@ -2011,6 +2044,12 @@ impl Workspace {
     }
 
     fn on_close_tabs(&mut self, action: &CloseTabs, window: &mut Window, cx: &mut Context<Self>) {
+        if action.scope == crate::app::CloseScope::This
+            && !self.split_tabs.contains_key(&action.tab)
+        {
+            self.close_center_tab(action.tab, window, cx);
+            return;
+        }
         let Some((group, anchor)) = self.center_tab_location(action.tab, cx) else {
             return;
         };
@@ -2668,9 +2707,11 @@ fn new_terminal_panel(
             TerminalPanelEvent::Input(id, input) => {
                 this.broadcast_input(CenterTab::Terminal(*id), input, cx);
             }
-            TerminalPanelEvent::Activated(terminal_id, _) => {
-                this.set_active_tab(Some(CenterTab::Terminal(*terminal_id)), window, cx)
-            }
+            TerminalPanelEvent::Activated(terminal_id, _) => this.set_active_tab(
+                Some(this.selected_terminal_pane(CenterTab::Terminal(*terminal_id), cx)),
+                window,
+                cx,
+            ),
             TerminalPanelEvent::Closed(terminal_id, host_id) => {
                 this.cancel_prompts_for_terminal(*terminal_id, window, cx);
                 this.terminals.remove(terminal_id);
@@ -2911,7 +2952,11 @@ fn new_local_terminal_panel(
                 this.broadcast_input(CenterTab::LocalTerminal(*id), input, cx);
             }
             LocalTerminalPanelEvent::Activated(id) => {
-                this.set_active_tab(Some(CenterTab::LocalTerminal(*id)), window, cx);
+                this.set_active_tab(
+                    Some(this.selected_terminal_pane(CenterTab::LocalTerminal(*id), cx)),
+                    window,
+                    cx,
+                );
                 cx.notify();
             }
             LocalTerminalPanelEvent::Closed(id) => {
@@ -3017,6 +3062,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_new_local_terminal))
             .on_action(cx.listener(Self::on_split_terminal_right))
             .on_action(cx.listener(Self::on_split_terminal_down))
+            .on_action(cx.listener(Self::on_move_terminal_pane))
+            .on_action(cx.listener(Self::on_show_terminal_pane_drop_tab))
             .on_action(cx.listener(Self::on_toggle_terminal_broadcast))
             .on_action(cx.listener(Self::on_set_broadcast_target))
             .on_action(cx.listener(Self::on_toggle_compose_pane))

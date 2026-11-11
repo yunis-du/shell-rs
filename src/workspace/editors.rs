@@ -249,6 +249,22 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let tab_count = tabs.len();
+        let tabs: Vec<_> = tabs
+            .into_iter()
+            .flat_map(|tab| {
+                self.split_tabs.get(&tab).map_or_else(
+                    || vec![tab],
+                    |panes| {
+                        let mut panes = panes.read(cx).terminals();
+                        // Close the docked terminal last, avoiding a tab replacement.
+                        panes.retain(|pane| *pane != tab);
+                        panes.push(tab);
+                        panes
+                    },
+                )
+            })
+            .collect();
         let mut editors = Vec::new();
         for tab in &tabs {
             match tab {
@@ -272,7 +288,7 @@ impl Workspace {
         }
         let this = cx.weak_entity();
         confirm_danger(
-            tn!("workspace.unsaved.close_tabs_title", tabs.len()),
+            tn!("workspace.unsaved.close_tabs_title", tab_count),
             Some(t!(
                 "workspace.unsaved.close_tabs",
                 files = describe_files(&unsaved)

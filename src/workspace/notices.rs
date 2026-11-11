@@ -180,21 +180,23 @@ impl Workspace {
         }
     }
 
-    fn show_terminal_tab(&self, tab: CenterTab, window: &mut Window, cx: &mut Context<Self>) {
-        let target = match tab {
-            CenterTab::Terminal(id) => self
-                .terminals
-                .get(&id)
-                .map(|panel| (panel.read(cx).tab_group(), panel.entity_id())),
-            CenterTab::LocalTerminal(id) => self
-                .local_terminals
-                .get(&id)
-                .map(|panel| (panel.read(cx).tab_group(), panel.entity_id())),
-            _ => None,
+    fn show_terminal_tab(&mut self, tab: CenterTab, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((group, panel)) = self.center_tab_location(tab, cx) else {
+            return;
         };
-        if let Some((group, panel)) = target {
-            self.activate_tab(group, panel, window, cx);
-        }
+        self.select_terminal_pane(tab, cx);
+        self.select_center_panel(&group, panel, window, cx);
+        // Selecting an already visible tab does not move the focus. A
+        // notice can still point to a different pane in it.
+        cx.defer_in(window, move |this, window, cx| {
+            if this.visible_center_tabs(cx).contains(&tab)
+                && !crate::app::content_focus_blocked(window, cx)
+            {
+                this.set_active_tab(Some(tab), window, cx);
+                this.focus_center(window, cx);
+                cx.notify();
+            }
+        });
     }
 
     fn notice_tab_title(&self, tab: CenterTab, cx: &App) -> Option<String> {

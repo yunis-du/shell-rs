@@ -1,11 +1,14 @@
 use std::{
     cell::{Cell, RefCell},
+    collections::HashMap,
     rc::Rc,
     sync::Arc,
 };
 
-use crate::app::{CatalogIcon, ToggleTerminalBroadcast};
+use super::terminal_panes::{TerminalPanes, terminal_drop_target};
+use crate::app::{CatalogIcon, CenterTab, ToggleTerminalBroadcast};
 use crate::i18n::t;
+use crate::terminal::{LocalTerminalPanel, TerminalPanel};
 use gpui_kit::component::dock::{
     BasePanelView, DockArea, DockAreaRenderer, DockContext, DockSkin, DropIndicator, NodeId,
     PanelState, PanelStyle, TabGroupContext, TabGroupRenderer, TilesRenderer,
@@ -85,6 +88,7 @@ pub(super) struct WorkspaceDockSkin {
     /// layout (`set_center_groups`).
     center_groups: Rc<RefCell<Vec<NodeId>>>,
     broadcast: Rc<Cell<TabBarControls>>,
+    terminal_panes: Rc<RefCell<HashMap<EntityId, WeakEntity<TerminalPanes>>>>,
     target: FocusHandle,
     area: WeakEntity<DockArea>,
     placeholder: AnyView,
@@ -110,6 +114,7 @@ impl WorkspaceDockSkin {
                 center_skin: DockSkin::new(cx),
                 center_groups: Rc::default(),
                 broadcast: Rc::default(),
+                terminal_panes: Rc::default(),
                 target,
                 area: cx.weak_entity(),
                 placeholder,
@@ -123,6 +128,15 @@ impl WorkspaceDockSkin {
         skin.center_skin.set_toggle_button_visible(false, cx);
         skin.center_skin.set_panel_style(PanelStyle::TabBar, cx);
         (area, skin)
+    }
+
+    pub(super) fn set_terminal_panes(&self, panel: EntityId, panes: Option<Entity<TerminalPanes>>) {
+        let mut layouts = self.terminal_panes.borrow_mut();
+        if let Some(panes) = panes {
+            layouts.insert(panel, panes.downgrade());
+        } else {
+            layouts.remove(&panel);
+        }
     }
 
     pub(super) fn is_center_empty(&self) -> bool {
@@ -215,6 +229,7 @@ impl DockAreaRenderer for WorkspaceDockSkin {
             center_skin: self.center_skin.tab_group_renderer(),
             center_groups: self.center_groups.clone(),
             broadcast: self.broadcast.clone(),
+            terminal_panes: self.terminal_panes.clone(),
             target: self.target.clone(),
         })
     }
@@ -260,6 +275,7 @@ struct WorkspaceTabBar {
     center_skin: Rc<dyn TabGroupRenderer>,
     center_groups: Rc<RefCell<Vec<NodeId>>>,
     broadcast: Rc<Cell<TabBarControls>>,
+    terminal_panes: Rc<RefCell<HashMap<EntityId, WeakEntity<TerminalPanes>>>>,
     target: FocusHandle,
 }
 
@@ -321,7 +337,41 @@ impl TabGroupRenderer for WorkspaceTabBar {
         window: &mut Window,
         cx: &mut App,
     ) -> AnyElement {
-        self.skin.render_active_panel(panel, group, window, cx)
+        let view = self
+            .terminal_panes
+            .borrow()
+            .get(&panel.entity_id())
+            .and_then(WeakEntity::upgrade);
+        if let Some(view) = view {
+            return self
+                .skin
+                .render_active_panel(view.into(), group, window, cx);
+        }
+        let tab = if let Ok(panel) = panel.clone().downcast::<TerminalPanel>() {
+            Some(CenterTab::Terminal(panel.read(cx).id()))
+        } else {
+            panel
+                .clone()
+                .downcast::<LocalTerminalPanel>()
+                .ok()
+                .map(|panel| CenterTab::LocalTerminal(panel.read(cx).id()))
+        };
+        let content = self.skin.render_active_panel(panel, group, window, cx);
+        match tab {
+            Some(tab) => terminal_drop_target(
+                v_flex()
+                    .id("terminal-tab-drop-target")
+                    .flex_1()
+                    .min_h_0()
+                    .child(content),
+                tab,
+                &self.target,
+                cx,
+            )
+            .test_support()
+            .into_any_element(),
+            None => content,
+        }
     }
     fn render_drop_indicator(
         &self,

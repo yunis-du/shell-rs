@@ -15,6 +15,7 @@ mod tab_menu;
 mod tint;
 
 pub use closable_tab::ClosableTabTitle;
+pub(crate) use closable_tab::TerminalPaneDrag;
 pub use command_line::{command_tooltip, one_line};
 pub use detail_row::detail_row;
 pub use dialog::{
