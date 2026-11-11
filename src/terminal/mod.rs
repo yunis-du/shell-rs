@@ -18,6 +18,7 @@ mod local_terminal_panel;
 mod model;
 mod mouse;
 mod notices;
+mod powerline;
 mod run;
 mod scrollbar;
 mod search;

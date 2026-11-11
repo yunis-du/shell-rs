@@ -34,6 +34,7 @@ use crate::i18n::{UiLocale, t};
 use super::box_drawing::{self, CellMetrics};
 use super::font;
 use super::mouse::{self, MouseReport, ReportButton, ReportKind};
+use super::powerline::Separator;
 use super::scrollbar::ScrollbackHandle;
 use super::search::SearchMark;
 use super::{
@@ -1449,6 +1450,8 @@ struct TerminalPaintState {
     backgrounds: Vec<PaintQuad>,
     /// Box drawing and blocks, each clipped to its cell.
     drawn: Vec<(Bounds<Pixels>, PaintQuad)>,
+    /// Solid Powerline glyphs, drawn independently of the terminal font.
+    separators: Vec<(Bounds<Pixels>, Path<Pixels>, Hsla)>,
     preedit: Vec<PreeditPaintCell>,
     cursor: Option<PaintQuad>,
     ime_cursor_bounds: Bounds<Pixels>,
@@ -1546,6 +1549,7 @@ impl Element for TerminalElement {
         let mut lines = Vec::with_capacity(self.snapshot.rows);
         let mut backgrounds = Vec::new();
         let mut drawn = Vec::new();
+        let mut separators = Vec::new();
         for (row_index, row) in self
             .snapshot
             .cells
@@ -1587,7 +1591,7 @@ impl Element for TerminalElement {
                     background_color = Some(cell_background);
                 }
 
-                let character = painted_cell_text(&cell.character, cell.flags);
+                let mut character = painted_cell_text(&cell.character, cell.flags);
                 let font = terminal_font(text_style.font(), cell.flags);
                 // A rule's color, dimmed as the program dimmed the text.
                 let highlight = cell.highlight.map(|highlight| {
@@ -1615,21 +1619,22 @@ impl Element for TerminalElement {
                 };
                 // Drawn here, a space in the line keeps the cell.
                 let mut characters = character.chars();
-                let shapes = match (characters.next(), characters.next()) {
-                    (Some(character), None) => box_drawing::shapes(character, metrics),
-                    _ => None,
-                };
-                let character = match shapes {
-                    Some(shapes) => {
+                if let (Some(glyph), None) = (characters.next(), characters.next()) {
+                    if let Some(shapes) = box_drawing::shapes(glyph, metrics) {
                         let cell = geometry.cell_bounds(column, row_index, 1);
                         drawn.extend(
                             box_drawing::quads(&shapes, cell.origin, scale, color)
                                 .map(|quad| (cell, quad)),
                         );
-                        " "
+                        character = " ";
+                    } else if let Some(separator) = Separator::from_char(glyph) {
+                        let cell = geometry.cell_bounds(column, row_index, 1);
+                        if let Some(path) = separator.path(cell) {
+                            separators.push((cell, path, color));
+                            character = " ";
+                        }
                     }
-                    None => character,
-                };
+                }
                 let len = character.len();
                 text.push_str(character);
                 runs.push(TextRun {
@@ -1725,6 +1730,7 @@ impl Element for TerminalElement {
             lines,
             backgrounds,
             drawn,
+            separators,
             preedit,
             cursor,
             ime_cursor_bounds,
@@ -1772,6 +1778,11 @@ impl Element for TerminalElement {
             for (cell, quad) in state.drawn.drain(..) {
                 window.with_content_mask(Some(ContentMask { bounds: cell }), |window| {
                     window.paint_quad(quad)
+                });
+            }
+            for (cell, path, color) in state.separators.drain(..) {
+                window.with_content_mask(Some(ContentMask { bounds: cell }), |window| {
+                    window.paint_path(path, color)
                 });
             }
             for cell in state.preedit.drain(..) {
