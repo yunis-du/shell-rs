@@ -407,7 +407,7 @@ impl BasePanel for TerminalPanel {
             return;
         }
         let focus = self.terminal.read(cx).focus_handle();
-        window.focus(&focus, cx);
+        crate::app::focus_content(&focus, window, cx);
         cx.emit(TerminalPanelEvent::Activated(self.id, self.host_id));
     }
 

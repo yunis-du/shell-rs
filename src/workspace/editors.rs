@@ -53,7 +53,7 @@ impl Workspace {
         let group = editor.read(cx).tab_group();
         self.activate_tab(group, editor.entity_id(), window, cx);
         let focus = editor.read(cx).state().read(cx).focus_handle(cx);
-        window.focus(&focus, cx);
+        crate::app::focus_content(&focus, window, cx);
     }
 
     /// A new editor tab for a file an SFTP tab has read, or the tab already

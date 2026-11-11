@@ -964,7 +964,7 @@ impl Workspace {
                 .then(|| self.recent.read(cx).focus_handle(cx))
         });
         if let Some(handle) = handle {
-            window.focus(&handle, cx);
+            crate::app::focus_content(&handle, window, cx);
         }
     }
 
@@ -1005,7 +1005,7 @@ impl Workspace {
             self.recent
                 .update(cx, |recent, cx| recent.clear_selection(cx));
             let page = self.recent.read(cx).focus_handle(cx);
-            window.focus(&page, cx);
+            crate::app::focus_content(&page, window, cx);
         }
         // A tab dragged into another group may hide the one in front.
         self.sync_front(window, cx);
@@ -1693,6 +1693,13 @@ impl Workspace {
         let Some(group) = group.and_then(|group| group.upgrade()) else {
             return;
         };
+        // Dock's select_tab takes focus synchronously. An external link or
+        // notification may select a tab while a dialog owns the keyboard.
+        let focus = if crate::app::content_focus_blocked(window, cx) {
+            window.focused(cx)
+        } else {
+            None
+        };
         group.update(cx, |group, cx| {
             let target = PanelId::from(panel);
             if let Some(ix) = group
@@ -1703,6 +1710,9 @@ impl Workspace {
                 group.select_tab(ix, window, cx);
             }
         });
+        if let Some(focus) = focus {
+            window.focus(&focus, cx);
+        }
     }
 
     /// Close a host's terminal tab. Goes through the dock area rather

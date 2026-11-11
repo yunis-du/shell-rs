@@ -872,6 +872,51 @@ fn show_snippets(cx: &mut TestAppContext, handle: WindowHandle<Root>) {
     in_frame(cx, handle, |window, cx| window.click("tool-snippets", cx));
 }
 
+/// A dialog still receives its actions while a newly opened tab activates.
+#[gpui_kit::test]
+fn deferred_terminal_activation_does_not_steal_dialog_focus(cx: &mut TestAppContext) {
+    use shellrs::app::{NewHost, NewLocalTerminal, SwitchToTab};
+
+    let (handle, _) = open_workspace(cx);
+    in_frame(cx, handle, |window, cx| window.click("host-search", cx));
+    in_frame(cx, handle, |window, cx| {
+        // Dock activation happens after the action which opens the dialog.
+        window.dispatch_action(Box::new(NewLocalTerminal), cx);
+        window.dispatch_action(Box::new(NewHost), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.find("host-name").visible());
+        assert!(window.find(("local-terminal-tab", 1u64)).visible());
+        window.dispatch_action(Box::new(SwitchToTab(1)), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.find(("local-terminal", 1u64)).visible());
+        window.press("escape", cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.try_find("host-name").is_none());
+        window.click("host-search", cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(Box::new(NewHost), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.click("host-name", cx);
+        window.input("draft", cx);
+        window.dispatch_action(Box::new(NewLocalTerminal), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        let name = window.find("host-name");
+        assert_eq!(name.focused(), Some(true));
+        assert_eq!(name.value(), Some("draft"));
+        assert!(window.find(("local-terminal-tab", 2u64)).visible());
+        window.click("cancel", cx);
+    });
+    in_frame(cx, handle, |window, _| {
+        assert!(window.try_find("host-name").is_none());
+    });
+}
+
 /// A dialog holds what was typed into it: a click beside it does not close
 /// it, Escape (like its buttons) does.
 #[gpui_kit::test]

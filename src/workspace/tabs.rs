@@ -40,6 +40,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::app::content_focus_blocked(window, cx) {
+            return;
+        }
         let Some(source) = self.active_tab else {
             return;
         };
@@ -101,7 +104,7 @@ impl Workspace {
         // layout settles so repeated splits follow the new pane.
         cx.defer_in(window, move |this, window, cx| {
             if let Some(focus) = this.tab_focus_handle(opened, cx) {
-                window.focus(&focus, cx);
+                crate::app::focus_content(&focus, window, cx);
             }
         });
     }
@@ -127,6 +130,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if crate::app::content_focus_blocked(window, cx) {
+            return;
+        }
         let Some((group, _)) = self.current_tab_group(cx) else {
             return;
         };
@@ -145,6 +151,9 @@ impl Workspace {
 
     /// The tab `step` places away from the current one, around the ends.
     fn step_tab(&mut self, step: isize, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::app::content_focus_blocked(window, cx) {
+            return;
+        }
         let Some((group, ix)) = self.current_tab_group(cx) else {
             return;
         };

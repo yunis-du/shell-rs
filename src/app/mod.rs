@@ -13,6 +13,7 @@ mod shortcuts;
 mod system_hotkey;
 #[cfg(windows)]
 mod tray;
+mod window_focus;
 mod window_hiding;
 
 pub use actions::*;
@@ -37,6 +38,7 @@ pub use system_hotkey::{system_hotkey_available, take_system_hotkey_press};
 pub use tray::listen_for_tray;
 #[cfg(windows)]
 pub(crate) use tray::sync as sync_window_tray;
+pub(crate) use window_focus::{content_focus_blocked, focus_content};
 pub use window_hiding::{MainWindow, bring_forward, hide_when_closed, restore_window, send_back};
 
 use gpui_kit::component::Theme;

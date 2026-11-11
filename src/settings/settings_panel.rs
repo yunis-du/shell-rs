@@ -149,7 +149,7 @@ impl SettingsPanel {
     /// Also called when the tab is opened again while already displayed,
     /// which the tab group does not report.
     pub fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.focus_handle, cx);
+        crate::app::focus_content(&self.focus_handle, window, cx);
         cx.emit(SettingsPanelEvent::Activated);
     }
 }

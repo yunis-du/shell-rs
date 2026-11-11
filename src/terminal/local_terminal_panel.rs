@@ -218,7 +218,7 @@ impl BasePanel for LocalTerminalPanel {
     fn set_active(&mut self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
         if active {
             let focus = self.terminal.read(cx).focus_handle();
-            window.focus(&focus, cx);
+            crate::app::focus_content(&focus, window, cx);
             cx.emit(LocalTerminalPanelEvent::Activated(self.id));
         }
     }

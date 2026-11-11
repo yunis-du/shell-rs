@@ -611,7 +611,7 @@ impl BasePanel for EditorPanel {
     fn set_active(&mut self, active: bool, window: &mut Window, cx: &mut Context<Self>) {
         if active {
             let focus = self.state.read(cx).focus_handle(cx);
-            window.focus(&focus, cx);
+            crate::app::focus_content(&focus, window, cx);
             cx.emit(EditorPanelEvent::Activated(self.id));
         }
     }

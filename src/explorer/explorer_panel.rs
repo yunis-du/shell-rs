@@ -1015,7 +1015,7 @@ impl BasePanel for ExplorerPanel {
             // Focus a file list, not the panel root, so list shortcuts work
             // without a click first. Both stay inside this panel.
             let focus = self.pane(self.last_remote).read(cx).focus_handle(cx);
-            window.focus(&focus, cx);
+            crate::app::focus_content(&focus, window, cx);
             cx.emit(ExplorerPanelEvent::Activated(self.id));
         }
     }

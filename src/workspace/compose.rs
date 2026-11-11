@@ -114,7 +114,11 @@ impl Workspace {
     pub(super) fn focus_compose_soon(&self, window: &mut Window, cx: &mut Context<Self>) {
         let pane = self.compose.clone();
         cx.spawn_in(window, async move |_, cx| {
-            _ = cx.update(|window, cx| pane.update(cx, |pane, cx| pane.focus(window, cx)));
+            _ = cx.update(|window, cx| {
+                if !crate::app::content_focus_blocked(window, cx) {
+                    pane.update(cx, |pane, cx| pane.focus(window, cx));
+                }
+            });
         })
         .detach();
     }

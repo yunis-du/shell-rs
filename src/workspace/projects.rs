@@ -272,7 +272,7 @@ impl Workspace {
             let group = panel.read(cx).tab_group();
             self.activate_tab(group, panel.entity_id(), window, cx);
             let focus = panel.read(cx).focus_handle(cx);
-            window.focus(&focus, cx);
+            crate::app::focus_content(&focus, window, cx);
             return;
         }
         if let Some(terminal) = self.store.read(cx).saved_terminal(id).cloned() {

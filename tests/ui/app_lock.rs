@@ -204,6 +204,16 @@ fn app_lock_settings_and_startup_gate(cx: &mut TestAppContext) {
     assert_eq!(fresh_created.get(), 1);
     app_settings(cx, reopened);
     in_frame(cx, reopened, |window, cx| {
+        // In English the settings above the app lock can take more rows.
+        if !window.find("app-lock-disable").visible() {
+            window.scroll(
+                "settings",
+                gpui_kit::ScrollDelta::Pixels(point(px(0.), px(-300.))),
+                cx,
+            );
+        }
+    });
+    in_frame(cx, reopened, |window, cx| {
         window.click("app-lock-disable", cx)
     });
     in_frame(cx, reopened, |window, cx| {
