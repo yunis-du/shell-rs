@@ -48,6 +48,8 @@ git push origin v0.1.19
 
 [`release` 工作流](../.github/workflows/release.yml) 校验 tag 和版本号，打包 macOS Apple Silicon / Intel 的 DMG 和更新 ZIP、Windows x64 安装版和便携 ZIP，以及 Linux x86_64 AppImage。所有构建成功后，工作流签名并校验产物，生成 `SHA256SUMS` 和签名更新清单，将它们一起发布到 [GitHub Releases](https://github.com/yunis-du/shell-rs/releases)。在 Actions 手动运行工作流只打包，可从运行详情下载产物。
 
+强制更新已发布的 tag 时，如果对应 Release 允许修改，工作流会更新同一个 Release 的说明和产物，并最后上传更新清单。同版本重发不会向已经安装该版本的用户提示更新。
+
 正式版包含 `stable.json` 和 `beta.json`；像 `v0.1.19-beta.1` 这样的预发布版标记为 Pre-release，只包含 `beta.json`。客户端按语义版本选出所选通道的最新版，验签后从同一个 Release 下载当前平台的包，再校验大小和 SHA-256。清单结构见 [示例](../packaging/manifest.example.json)。
 
 此前从上游或本地脚本安装的版本不会自动迁移到 fork 的更新源。先从此仓库的 Releases 手动安装一次，以后由该分支更新。
