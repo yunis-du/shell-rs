@@ -3,20 +3,86 @@
 
 use std::rc::Rc;
 
+use gpui_kit::component::{WindowExt as _, notification::Notification};
 use gpui_kit::*;
 
+use crate::analytics::Counter;
 use crate::app::{
-    DeleteSnippet, DeleteSnippetCategory, EditSnippet, MoveSnippetNode, NewSnippet,
-    NewSnippetCategory, NewSnippetIn, NewSnippetSubcategory, RenameSnippetCategory,
-    ToggleSnippetCategory,
+    DeleteSnippet, DeleteSnippetCategory, EditSnippet, EnterCommand, MoveSnippetNode, NewSnippet,
+    NewSnippetCategory, NewSnippetIn, NewSnippetSubcategory, QuickSnippet, RenameSnippetCategory,
+    RunQuickSnippet, ToggleSnippetCategory,
 };
 use crate::i18n::{join_list, t, tn};
 use crate::shared::confirm_delete;
-use crate::snippets::{CategoryDialog, SnippetDialog, open_category_dialog, open_snippet_dialog};
+use crate::snippets::{
+    CategoryDialog, SnippetDialog, open_category_dialog, open_quick_snippet_dialog,
+    open_snippet_dialog,
+};
 
 use super::workspace_view::Workspace;
 
 impl Workspace {
+    pub(super) fn on_quick_snippet(
+        &mut self,
+        _: &QuickSnippet,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if window.has_active_dialog(cx) {
+            return;
+        }
+        let Some((terminal, recipient)) = self
+            .tool_target(cx)
+            .map(|target| target.tab())
+            .and_then(|tab| self.recipient(tab, cx).map(|recipient| (tab, recipient)))
+        else {
+            window.push_notification(Notification::info(t!("snippets.quick.no_terminal")), cx);
+            return;
+        };
+        open_quick_snippet_dialog(
+            self.store.read(cx).snippets().to_vec(),
+            terminal,
+            recipient.view.read(cx).generation(cx),
+            recipient.name,
+            self.focus_handle.clone(),
+            window,
+            cx,
+        );
+    }
+
+    pub(super) fn on_run_quick_snippet(
+        &mut self,
+        action: &RunQuickSnippet,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let target = self.tool_target(cx).filter(|target| {
+            target.tab() == action.terminal
+                && self
+                    .recipient(action.terminal, cx)
+                    .is_some_and(|recipient| {
+                        recipient.view.read(cx).generation(cx) == action.generation
+                    })
+        });
+        let Some(target) = target else {
+            window.push_notification(
+                Notification::error(t!("snippets.quick.terminal_changed")),
+                cx,
+            );
+            return;
+        };
+        self.enter_command_on(
+            target,
+            &EnterCommand {
+                command: action.command.clone(),
+                run: true,
+            },
+            Counter::CommandSnippet,
+            window,
+            cx,
+        );
+    }
+
     pub(super) fn on_new_snippet(
         &mut self,
         _: &NewSnippet,

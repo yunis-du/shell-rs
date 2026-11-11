@@ -4,7 +4,7 @@
 use crate::support::*;
 use shellrs::app::{
     DeleteSnippet, DeleteSnippetCategory, EditSnippet, NewSnippetCategory, NewSnippetIn,
-    NewSnippetSubcategory, RenameSnippetCategory,
+    NewSnippetSubcategory, RenameSnippetCategory, Shortcut,
 };
 use shellrs::host::{SnippetCategoryDraft, SnippetCategoryId, SnippetDraft, SnippetId};
 
@@ -31,6 +31,86 @@ const DISK: u64 = 3;
 const CONTAINERS: u64 = 4;
 const LOGS: u64 = 1;
 const DOCKER: u64 = 2;
+
+#[gpui_kit::test]
+async fn quick_snippet_searches_and_runs_a_command_in_the_current_terminal(
+    cx: &mut TestAppContext,
+) {
+    let factory = Arc::new(FakeTerminalFactory::default());
+    let (handle, workspace) =
+        open_workspace_with_remote_factory(cx, store_with_snippets(), factory.clone());
+    in_frame(cx, handle, |window, cx| {
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(2), |_, cx| {
+        remote_lifecycle(&workspace, RemoteTerminalId(INITIAL_WEB_TERMINAL), cx).accepts_input()
+    })
+    .await;
+    let keys = Shortcut::find("quick-snippet").unwrap().default_keys();
+    let before = factory.written_text();
+    in_frame(cx, handle, |window, cx| window.press(keys, cx));
+    in_frame(cx, handle, |window, cx| {
+        assert!(window.find("quick-snippet").visible());
+        assert_eq!(
+            window.find("quick-snippet-target").label(),
+            Some("在 web-01 中执行")
+        );
+        window.press("enter", cx);
+    });
+    assert_eq!(factory.written_text(), before);
+
+    in_frame(cx, handle, |window, cx| window.input("does not match", cx));
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, _| {
+        window.try_find("quick-snippet-empty").is_some()
+    })
+    .await;
+    in_frame(cx, handle, |window, cx| {
+        window.press("enter", cx);
+        window.press("secondary-a", cx);
+        window.input("PS -A", cx);
+    });
+    assert_eq!(factory.written_text(), before);
+    cx.wait_for(handle.into(), Duration::from_secs(2), |window, _| {
+        window
+            .try_find(("quick-snippet-item", CONTAINERS))
+            .is_some()
+            && window.try_find(("quick-snippet-item", IMAGES)).is_none()
+    })
+    .await;
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(
+            window.find(("quick-snippet-item", CONTAINERS)).label(),
+            Some("容器 · docker ps -a")
+        );
+        window.press("enter", cx);
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(2), |_, _| {
+        factory.written_text().strip_prefix(&before) == Some("\x05\x15docker ps -a\r")
+    })
+    .await;
+    in_frame(cx, handle, |window, _| {
+        assert!(window.try_find("quick-snippet").is_none());
+        assert_eq!(
+            window.find(("terminal", INITIAL_WEB_TERMINAL)).focused(),
+            Some(true)
+        );
+    });
+
+    let before = factory.written_text();
+    in_frame(cx, handle, |window, cx| window.press(keys, cx));
+    in_frame(cx, handle, |window, cx| {
+        window.press("down", cx);
+        window.press("escape", cx);
+    });
+    in_frame(cx, handle, |window, _| {
+        assert!(window.try_find("quick-snippet").is_none());
+        assert_eq!(
+            window.find(("terminal", INITIAL_WEB_TERMINAL)).focused(),
+            Some(true)
+        );
+    });
+    assert_eq!(factory.written_text(), before);
+}
 
 /// 命令片段 shown beside web-01's terminal, once its shell runs.
 async fn open_snippets(

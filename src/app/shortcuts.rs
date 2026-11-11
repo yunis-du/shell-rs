@@ -88,7 +88,7 @@ macro_rules! shortcut {
 }
 
 /// The shortcuts of 设置 › 键盘快捷键, in the order the page lists them.
-pub static SHORTCUTS: [Shortcut; 33] = [
+pub static SHORTCUTS: [Shortcut; 34] = [
     shortcut!(
         "new-host",
         "app.shortcut.new_host",
@@ -115,6 +115,15 @@ pub static SHORTCUTS: [Shortcut; 33] = [
         "cmd-o",
         "ctrl-shift-o",
         QuickConnect
+    ),
+    shortcut!(
+        "quick-snippet",
+        "app.shortcut.quick_snippet",
+        General,
+        WORKSPACE,
+        "cmd-shift-r",
+        "ctrl-shift-r",
+        QuickSnippet
     ),
     shortcut!(
         "open-settings",

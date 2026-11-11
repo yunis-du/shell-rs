@@ -5,10 +5,12 @@
 //! their list and their dialogs.
 
 mod model;
+mod quick_snippet;
 mod snippet_dialog;
 mod snippet_panel;
 
 pub use model::category_options;
+pub(crate) use quick_snippet::open_quick_snippet_dialog;
 pub use snippet_dialog::{
     CategoryDialog, SnippetDialog, open_category_dialog, open_snippet_dialog,
 };

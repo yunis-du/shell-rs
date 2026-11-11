@@ -34,6 +34,19 @@ snippets.card.runs_on_click:
   zh-CN: 点击时自动执行
   en: Runs on click
 
+snippets.quick.title:
+  zh-CN: 执行命令片段
+  en: Run a command snippet
+snippets.quick.target:
+  zh-CN: 在 %{terminal} 中执行
+  en: Run in %{terminal}
+snippets.quick.no_terminal:
+  zh-CN: 请先打开一个终端。
+  en: Open a terminal first.
+snippets.quick.terminal_changed:
+  zh-CN: 目标终端已切换、关闭或重连。请重新打开命令片段选择框。
+  en: The target terminal changed, closed, or reconnected. Open the snippet picker again.
+
 snippets.menu.new_snippet:
   zh-CN: 新建片段…
   en: New snippet…

@@ -367,23 +367,42 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (view, replace) = match self.tool_target(cx) {
-            Some(ToolTarget::Remote(_)) => {
-                let Some(terminal) = self.tool_terminal(cx) else {
+        let Some(target) = self.tool_target(cx) else {
+            return;
+        };
+        // Only the snippets and the history put commands in.
+        let counter = match self.tools.read(cx).tool() {
+            ToolKind::History => Counter::CommandHistory,
+            _ => Counter::CommandSnippet,
+        };
+        self.enter_command_on(target, action, counter, window, cx);
+    }
+
+    pub(super) fn enter_command_on(
+        &mut self,
+        target: ToolTarget,
+        action: &EnterCommand,
+        counter: Counter,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (view, replace) = match target {
+            ToolTarget::Remote(id) => {
+                let Some(panel) = self.terminals.get(&id) else {
                     return;
                 };
-                let Some(view) = terminal.view.upgrade() else {
-                    return;
-                };
-                (view, terminal.os != Some(HostOs::Windows))
+                let panel = panel.read(cx);
+                (
+                    panel.terminal().clone(),
+                    panel.host().os != Some(HostOs::Windows),
+                )
             }
-            Some(ToolTarget::Local(id)) => {
+            ToolTarget::Local(id) => {
                 let Some(panel) = self.local_terminals.get(&id) else {
                     return;
                 };
                 (panel.read(cx).terminal().clone(), !cfg!(windows))
             }
-            None => return,
         };
         let EnterCommand { command, run } = action;
         match view.update(cx, |view, cx| {
@@ -392,11 +411,7 @@ impl Workspace {
             Ok(()) => {
                 let focus = view.read(cx).focus_handle();
                 window.focus(&focus, cx);
-                // Only the snippets and the history put commands in.
-                self.count(match self.tools.read(cx).tool() {
-                    ToolKind::History => Counter::CommandHistory,
-                    _ => Counter::CommandSnippet,
-                });
+                self.count(counter);
             }
             Err(why) => {
                 let message = if *run {

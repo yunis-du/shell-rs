@@ -57,6 +57,9 @@ app.shortcut.open_settings:
 app.shortcut.quick_connect:
   zh-CN: 快速连接
   en: Find a host
+app.shortcut.quick_snippet:
+  zh-CN: 快速执行命令片段
+  en: Run a command snippet
 app.shortcut.split_terminal_left:
   zh-CN: 向左分屏
   en: Split terminal left

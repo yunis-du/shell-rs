@@ -3047,6 +3047,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_new_host))
             .on_action(cx.listener(Self::on_new_temporary_connection))
             .on_action(cx.listener(Self::on_quick_connect))
+            .on_action(cx.listener(Self::on_quick_snippet))
+            .on_action(cx.listener(Self::on_run_quick_snippet))
             .on_action(cx.listener(Self::on_new_local_terminal))
             .on_action(cx.listener(Self::on_split_terminal_left))
             .on_action(cx.listener(Self::on_split_terminal_down))

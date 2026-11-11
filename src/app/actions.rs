@@ -36,6 +36,8 @@ gpui_kit::actions!(
         /// Open 快速连接: search the saved hosts and connect to one or
         /// several.
         QuickConnect,
+        /// Find a saved command snippet and run it in the current terminal.
+        QuickSnippet,
         /// Open the new-group dialog for a top-level group.
         NewGroup,
         /// Open the import dialog for the hosts `~/.ssh/config` names.
@@ -538,6 +540,15 @@ pub struct RemoveDockerObject {
 pub struct EnterCommand {
     pub command: String,
     pub run: bool,
+}
+
+/// Run the command shown by the picker in the terminal it was opened for.
+#[derive(Action, Clone, PartialEq, Eq)]
+#[action(namespace = shellrs, no_json)]
+pub(crate) struct RunQuickSnippet {
+    pub(crate) terminal: CenterTab,
+    pub(crate) generation: u64,
+    pub(crate) command: String,
 }
 
 /// One tab of the center area, by the identity of what it shows.

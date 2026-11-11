@@ -5,7 +5,8 @@
 use std::collections::HashMap;
 
 use crate::support::*;
-use shellrs::app::{SendCompose, ToggleComposePane};
+use shellrs::app::{SendCompose, Shortcut, ToggleComposePane};
+use shellrs::host::SnippetDraft;
 
 struct PerHostTerminals(HashMap<String, Arc<FakeTerminalFactory>>);
 
@@ -95,6 +96,56 @@ fn pane_setting(fixture: &Fixture, cx: &mut TestAppContext) -> bool {
             .settings()
             .compose_pane
     })
+}
+
+#[gpui_kit::test]
+async fn quick_snippet_click_runs_in_the_local_terminal_only(cx: &mut TestAppContext) {
+    let fixture = open(cx, false).await;
+    let handle = fixture.handle;
+    let snippet = fixture
+        .workspace
+        .read_with(cx, |workspace, _| workspace.store().clone())
+        .update(cx, |store, cx| {
+            store.insert_snippet(SnippetDraft::new("Directory", "pwd", None), cx)
+        });
+    in_frame(cx, handle, |window, cx| {
+        window.click("new-local-terminal", cx)
+    });
+    cx.wait_for(handle.into(), Duration::from_secs(2), |_, cx| {
+        fixture
+            .workspace
+            .read(cx)
+            .local_terminal(LocalTerminalId(1))
+            .is_some_and(|panel| {
+                panel
+                    .read(cx)
+                    .terminal()
+                    .read(cx)
+                    .lifecycle(cx)
+                    .accepts_input()
+            })
+    })
+    .await;
+    let keys = Shortcut::find("quick-snippet").unwrap().default_keys();
+    in_frame(cx, handle, |window, cx| window.press(keys, cx));
+    in_frame(cx, handle, |window, cx| {
+        window.click(("quick-snippet-item", snippet.0), cx);
+    });
+    let expected = if cfg!(windows) {
+        "pwd\r"
+    } else {
+        "\x05\x15pwd\r"
+    };
+    cx.wait_for(handle.into(), Duration::from_secs(2), |_, _| {
+        fixture.local.written_text() == expected
+    })
+    .await;
+    assert!(fixture.web.written_text().is_empty());
+    assert!(fixture.staging.written_text().is_empty());
+    in_frame(cx, handle, |window, _| {
+        assert!(window.try_find("quick-snippet").is_none());
+        assert_eq!(window.find(("local-terminal", 1u64)).focused(), Some(true));
+    });
 }
 
 #[gpui_kit::test]
