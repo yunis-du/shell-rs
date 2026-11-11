@@ -389,6 +389,12 @@ settings.window.sidebar_widths_description:
 settings.window.sidebar_widths_reset:
   zh-CN: 恢复默认
   en: Restore defaults
+settings.window.confirm_before_quit:
+  zh-CN: 退出前确认
+  en: Confirm before quitting
+settings.window.confirm_before_quit_description:
+  zh-CN: 退出 ShellRS 前询问，避免误关终端和连接。关闭后，未保存文件的提示仍会保留。
+  en: Ask before quitting ShellRS to avoid closing terminals and connections by accident. Unsaved files still prompt when this is off.
 settings.window.close_to_tray:
   zh-CN: 关闭窗口时最小化到托盘
   en: Minimize to tray on close

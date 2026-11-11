@@ -19,6 +19,7 @@ mod imports;
 mod links;
 mod notices;
 mod projects;
+mod quit;
 mod recent_hosts;
 mod sidebar;
 mod sidebar_widths;

@@ -496,7 +496,16 @@ async fn quitting_with_unsaved_changes_asks_first(cx: &mut TestAppContext) {
     open_file(cx, handle, "remote-pane", "文件 甲.txt");
     wait_for_editor(cx, handle, FIRST).await;
 
-    // Nothing unsaved: nothing asked.
+    // With general confirmation off, nothing unsaved means nothing asked.
+    cx.update(|cx| {
+        workspace
+            .read(cx)
+            .settings()
+            .clone()
+            .update(cx, |store, cx| {
+                store.update(|settings| settings.window.confirm_before_quit = false, cx);
+            });
+    });
     cx.update(|cx| cx.dispatch_action(&Quit));
     cx.run_until_parked();
     in_frame(cx, handle, |window, _| {
@@ -520,7 +529,17 @@ async fn quitting_with_unsaved_changes_asks_first(cx: &mut TestAppContext) {
         cx.dispatch_action(&Quit);
     });
     wait_for(cx, handle, "ok").await;
-    in_frame(cx, handle, |window, cx| window.click("cancel", cx));
+    in_frame(cx, handle, |window, cx| {
+        assert_eq!(window.find("ok").label(), Some("放弃修改并退出"));
+        assert!(
+            window
+                .find("quit-unsaved")
+                .label()
+                .unwrap()
+                .contains("文件 甲.txt")
+        );
+        window.click("cancel", cx);
+    });
     assert!(is_open(&workspace, FIRST, cx));
 }
 

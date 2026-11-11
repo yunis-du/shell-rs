@@ -7,7 +7,7 @@
 //! closing hides the app: the Dock icon, ⌘Tab or opening ShellRS again
 //! shows the window as it was, and ⌘Q quits. Windows can opt into hiding in
 //! the notification area; otherwise it and Linux quit when the window
-//! closes, after the quit guard asks about unsaved changes.
+//! closes, after the quit guard asks for confirmation.
 
 use gpui_kit::{AnyWindowHandle, App, Global, Window};
 

@@ -246,6 +246,7 @@ mod tool_by_key {
 /// 应用 → 窗口: what the next launch restores, and how closing behaves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
+#[non_exhaustive]
 pub struct WindowSettings {
     /// 记住窗口大小: its size, and whether it was maximized.
     pub remember_size: bool,
@@ -254,6 +255,8 @@ pub struct WindowSettings {
     /// Windows only: hide the window in the notification area instead of
     /// quitting when its close button is clicked. Off until enabled.
     pub close_to_tray: bool,
+    /// Ask before quitting, even when no editor has unsaved changes.
+    pub confirm_before_quit: bool,
 }
 
 impl Default for WindowSettings {
@@ -262,6 +265,7 @@ impl Default for WindowSettings {
             remember_size: true,
             remember_position: true,
             close_to_tray: false,
+            confirm_before_quit: true,
         }
     }
 }
@@ -1109,6 +1113,18 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(r#"{"window":{"close_to_tray":true}}"#).unwrap();
         assert!(settings.window.close_to_tray);
+        assert!(settings.window.remember_size && settings.window.remember_position);
+    }
+
+    #[test]
+    fn quitting_asks_unless_the_file_says_otherwise() {
+        for json in ["{}", r#"{"window":{"remember_position":false}}"#] {
+            let settings: AppSettings = serde_json::from_str(json).unwrap();
+            assert!(settings.window.confirm_before_quit);
+        }
+        let settings: AppSettings =
+            serde_json::from_str(r#"{"window":{"confirm_before_quit":false}}"#).unwrap();
+        assert!(!settings.window.confirm_before_quit);
         assert!(settings.window.remember_size && settings.window.remember_position);
     }
 

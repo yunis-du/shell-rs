@@ -192,6 +192,8 @@ pub struct Workspace {
     settings_tab: Option<Entity<SettingsPanel>>,
     /// What the settings tab edits; the workspace applies it to the window.
     settings: Entity<SettingsStore>,
+    /// A quit confirmation or its final sync is already in progress.
+    pub(super) quit_pending: bool,
     /// Where the `shellrs` command and the agent skills go, and whether
     /// they are there. No paths in UI tests, so nothing reaches the home
     /// directory unless a test hands it a temporary one.
@@ -588,8 +590,8 @@ impl Workspace {
                 });
             });
         });
-        // ⌘Q (and on Windows and Linux the window's close button) asks first
-        // when an editor has changes not saved yet.
+        // Every quit entry point follows the confirmation preference and
+        // protects unsaved files, wherever focus is.
         let this = cx.weak_entity();
         crate::app::set_quit_guard(
             window.window_handle(),
@@ -734,6 +736,7 @@ impl Workspace {
             front_saved_terminal,
             settings_tab: None,
             settings,
+            quit_pending: false,
             cli_integration: cx.new(|_| CliIntegration::new(None)),
             cli_server: None,
             locked_links: Vec::new(),

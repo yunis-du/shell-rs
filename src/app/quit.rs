@@ -1,5 +1,4 @@
-//! ⌘Q asks first when quitting would lose something: an editor's changes
-//! that are not saved yet.
+//! Every quit entry point follows the workspace's confirmation and sync guard.
 //!
 //! The guard is a global rather than a listener on the workspace's element:
 //! after a dialog closes nothing is focused, and then an action reaches only

@@ -234,9 +234,15 @@ workspace.files.pair:
 workspace.files.several:
   zh-CN: “%{first}”等 %{count} 个文件
   en: "%{count} files including “%{first}”"
-workspace.unsaved.quit_title:
+workspace.quit.title:
   zh-CN: 退出 ShellRS？
   en: Quit ShellRS?
+workspace.quit.description:
+  zh-CN: 所有终端和连接都将关闭。
+  en: All terminals and connections will close.
+workspace.quit.confirm:
+  zh-CN: 退出
+  en: Quit
 workspace.unsaved.quit:
   zh-CN: "%{files}有未保存的修改，退出后会丢失。"
   en: Unsaved changes to %{files} will be lost.

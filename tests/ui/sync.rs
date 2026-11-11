@@ -471,6 +471,31 @@ async fn quitting_waits_for_the_last_edit_to_sync(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+async fn confirming_quit_syncs_the_last_edit(cx: &mut TestAppContext) {
+    let folder = Arc::new(MemoryStore::new());
+    let desk = desk(cx, &folder);
+    set_up_on_the_desk(cx, &desk).await;
+    desk.store(cx).update(cx, |store, cx| {
+        store.insert(
+            HostDraft::new("cache-01", "10.0.3.1", 22, "root", AuthKind::Password, None),
+            cx,
+        );
+    });
+    cx.update(|cx| cx.dispatch_action(&shellrs::app::Quit));
+    cx.run_until_parked();
+    in_frame(cx, desk.handle, |window, cx| {
+        assert!(window.find("quit-confirmation").visible());
+        window.click("ok", cx);
+    });
+    in_frame(cx, desk.handle, |window, _| {
+        assert!(window.try_find("quit-confirmation").is_none());
+    });
+    let laptop = laptop(cx, &folder);
+    laptop.join(cx).await;
+    assert!(host_names(&laptop.store, cx).contains(&"cache-01".to_string()));
+}
+
+#[gpui_kit::test]
 async fn turning_sync_off_keeps_the_data_and_can_take_the_file_too(cx: &mut TestAppContext) {
     let folder = Arc::new(MemoryStore::new());
     let desk = desk(cx, &folder);

@@ -494,7 +494,7 @@ fn closing_to_the_tray_is_off_and_offered_only_on_windows(cx: &mut TestAppContex
         let offered = gpui_kit::base::test_support::snapshots(window)
             .iter()
             .any(|element| {
-                ["settings", "group-0", "item-3"]
+                ["settings", "group-0", "item-4"]
                     .iter()
                     .all(|id| element.path().contains(&ElementId::from(*id)))
             });
@@ -507,7 +507,7 @@ fn closing_to_the_tray_is_off_and_offered_only_on_windows(cx: &mut TestAppContex
                 window
                     .within("settings")
                     .within("group-0")
-                    .within("item-3")
+                    .within("item-4")
                     .find("check")
                     .checked(),
                 Some(false)
@@ -515,7 +515,7 @@ fn closing_to_the_tray_is_off_and_offered_only_on_windows(cx: &mut TestAppContex
             window
                 .within("settings")
                 .within("group-0")
-                .within("item-3")
+                .within("item-4")
                 .click("check", cx);
         });
         cx.update(|cx| {
