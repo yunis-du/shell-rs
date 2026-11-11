@@ -215,8 +215,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if let Some(editor) = self.editors.get(&id).cloned() {
-            self.dock_area
-                .update(cx, |area, cx| area.remove_panel(editor, window, cx));
+            self.remove_center_panel(editor, window, cx);
         }
     }
 

@@ -39,21 +39,21 @@ fn split_shortcuts_open_terminals_on_the_requested_side_and_follow_focus(cx: &mu
     });
     in_frame(cx, handle, |window, cx| {
         let source = window.find(("terminal", INITIAL_WEB_TERMINAL));
-        let left = window.find(("terminal", FIRST_NEW_TERMINAL));
-        assert!(source.visible() && left.visible());
-        assert!(left.bounds().right() <= source.bounds().left());
-        assert_eq!(left.focused(), Some(true));
+        let right = window.find(("terminal", FIRST_NEW_TERMINAL));
+        assert!(source.visible() && right.visible());
+        assert!(source.bounds().right() <= right.bounds().left());
+        assert_eq!(right.focused(), Some(true));
         assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 2);
         window.press(default_keys("split-terminal-down"), cx);
     });
     assert_eq!(active_tab(&workspace, cx), terminal(FIRST_NEW_TERMINAL + 1));
     in_frame(cx, handle, |window, cx| {
-        let left = window.find(("terminal", FIRST_NEW_TERMINAL));
+        let right = window.find(("terminal", FIRST_NEW_TERMINAL));
         let below = window.find(("terminal", FIRST_NEW_TERMINAL + 1));
         let source = window.find(("terminal", INITIAL_WEB_TERMINAL));
-        assert!(left.visible() && below.visible() && source.visible());
-        assert!(left.bounds().bottom() <= below.bounds().top());
-        assert!(below.bounds().right() <= source.bounds().left());
+        assert!(right.visible() && below.visible() && source.visible());
+        assert!(right.bounds().bottom() <= below.bounds().top());
+        assert!(source.bounds().right() <= below.bounds().left());
         assert_eq!(below.focused(), Some(true));
         assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 3);
         // A split is another connection, and closes without closing its source.
@@ -65,8 +65,27 @@ fn split_shortcuts_open_terminals_on_the_requested_side_and_follow_focus(cx: &mu
                 .try_find(("terminal", FIRST_NEW_TERMINAL + 1))
                 .is_none()
         );
-        assert!(window.find(("terminal", FIRST_NEW_TERMINAL)).visible());
+        let surviving_pane = window.find(("terminal", FIRST_NEW_TERMINAL));
+        assert!(surviving_pane.visible());
+        assert_eq!(surviving_pane.focused(), Some(true));
         assert_eq!(workspace.read(cx).terminal_count(HostId(WEB_01), cx), 2);
+        // The remaining pane can be closed from the keyboard immediately.
+        window.press(default_keys("close-tab"), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        assert!(
+            window
+                .try_find(("terminal-tab", FIRST_NEW_TERMINAL))
+                .is_none()
+        );
+        assert_eq!(
+            window.find(("terminal", INITIAL_WEB_TERMINAL)).focused(),
+            Some(true)
+        );
+        assert_eq!(
+            workspace.read(cx).active_tab(),
+            terminal(INITIAL_WEB_TERMINAL)
+        );
     });
 }
 
@@ -89,7 +108,7 @@ fn split_shortcuts_work_with_a_single_local_terminal_and_leave_other_views_alone
         let first = window.find(("local-terminal", 1u64));
         let second = window.find(("local-terminal", 2u64));
         assert!(first.visible() && second.visible());
-        assert!(second.bounds().right() <= first.bounds().left());
+        assert!(first.bounds().right() <= second.bounds().left());
         assert_eq!(second.focused(), Some(true));
         window.press(default_keys("split-terminal-down"), cx);
     });
@@ -111,6 +130,61 @@ fn split_shortcuts_work_with_a_single_local_terminal_and_leave_other_views_alone
                 .local_terminal(LocalTerminalId(4))
                 .is_none()
         )
+    });
+}
+
+#[gpui_kit::test]
+fn splitting_a_local_terminal_right_leaves_its_remote_tab_in_the_original_group(
+    cx: &mut TestAppContext,
+) {
+    use shellrs::app::CloseTerminal;
+
+    let (handle, workspace) = open_workspace(cx);
+    in_frame(cx, handle, |window, cx| {
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.dispatch_action(
+            Box::new(CloseTerminal(RemoteTerminalId(INITIAL_STAGING_TERMINAL))),
+            cx,
+        );
+    });
+    in_frame(cx, handle, |window, cx| {
+        window.click("new-local-terminal", cx)
+    });
+    let group_of_local = |id, cx: &mut TestAppContext| {
+        workspace.read_with(cx, |workspace, cx| {
+            workspace
+                .local_terminal(LocalTerminalId(id))
+                .unwrap()
+                .read(cx)
+                .tab_group()
+                .unwrap()
+                .upgrade()
+                .unwrap()
+                .entity_id()
+        })
+    };
+    let original_group = group_of_local(1, cx);
+    in_frame(cx, handle, |window, cx| {
+        window.press(default_keys("split-terminal-left"), cx);
+    });
+    assert_eq!(group_of_local(1, cx), original_group);
+    assert_ne!(group_of_local(2, cx), original_group);
+    in_frame(cx, handle, |window, cx| {
+        let original = window.find(("local-terminal", 1u64));
+        let new = window.find(("local-terminal", 2u64));
+        let remote_tab = window.find(("terminal-tab", INITIAL_WEB_TERMINAL));
+        assert!(original.bounds().right() <= new.bounds().left());
+        assert!(remote_tab.bounds().right() <= new.bounds().left());
+        assert_eq!(new.focused(), Some(true));
+        window.click(("terminal-tab", INITIAL_WEB_TERMINAL), cx);
+    });
+    in_frame(cx, handle, |window, _| {
+        let remote = window.find(("terminal", INITIAL_WEB_TERMINAL));
+        let new = window.find(("local-terminal", 2u64));
+        assert!(remote.bounds().right() <= new.bounds().left());
+        assert!(window.try_find(("local-terminal", 1u64)).is_none());
     });
 }
 

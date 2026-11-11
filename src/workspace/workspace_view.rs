@@ -1677,8 +1677,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if let Some(panel) = self.settings_tab.clone() {
-            self.dock_area
-                .update(cx, |area, cx| area.remove_panel(panel, window, cx));
+            self.remove_center_panel(panel, window, cx);
         }
     }
 
@@ -1751,8 +1750,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if let Some(panel) = self.terminals.get(&id).cloned() {
-            self.dock_area
-                .update(cx, |area, cx| area.remove_panel(panel, window, cx));
+            self.remove_center_panel(panel, window, cx);
         }
     }
 
@@ -1864,8 +1862,7 @@ impl Workspace {
                 window,
                 cx,
             );
-            self.dock_area
-                .update(cx, |area, cx| area.remove_panel(panel, window, cx));
+            self.remove_center_panel(panel, window, cx);
         }
     }
     fn on_explorer_action(
@@ -1953,8 +1950,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if let Some(panel) = self.local_terminals.get(&action.0).cloned() {
-            self.dock_area
-                .update(cx, |area, cx| area.remove_panel(panel, window, cx));
+            self.remove_center_panel(panel, window, cx);
         }
     }
 
@@ -3060,7 +3056,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_quick_snippet))
             .on_action(cx.listener(Self::on_run_quick_snippet))
             .on_action(cx.listener(Self::on_new_local_terminal))
-            .on_action(cx.listener(Self::on_split_terminal_left))
+            .on_action(cx.listener(Self::on_split_terminal_right))
             .on_action(cx.listener(Self::on_split_terminal_down))
             .on_action(cx.listener(Self::on_toggle_terminal_broadcast))
             .on_action(cx.listener(Self::on_set_broadcast_target))

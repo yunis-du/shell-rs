@@ -291,14 +291,15 @@ pub static SHORTCUTS: [Shortcut; 34] = [
         system_wide: false,
         action: |digit| Box::new(SwitchToTab(digit)),
     },
+    // Keep the saved id from when this shortcut opened the new tab on the left.
     shortcut!(
         "split-terminal-left",
-        "app.shortcut.split_terminal_left",
+        "app.shortcut.split_terminal_right",
         Terminal,
         TERMINAL_AND_FIND,
         "cmd-d",
         "ctrl-shift-d",
-        SplitTerminalLeft
+        SplitTerminalRight
     ),
     shortcut!(
         "split-terminal-down",

@@ -7,19 +7,19 @@ use gpui_kit::component::{
 use gpui_kit::*;
 
 use crate::app::{
-    CenterTab, NextTab, PreviousTab, SplitTerminalDown, SplitTerminalLeft, SwitchToTab,
+    CenterTab, NextTab, PreviousTab, SplitTerminalDown, SplitTerminalRight, SwitchToTab,
 };
 
 use super::Workspace;
 
 impl Workspace {
-    pub(super) fn on_split_terminal_left(
+    pub(super) fn on_split_terminal_right(
         &mut self,
-        _: &SplitTerminalLeft,
+        _: &SplitTerminalRight,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.split_terminal(Placement::Left, window, cx);
+        self.split_terminal(Placement::Right, window, cx);
     }
 
     pub(super) fn on_split_terminal_down(
@@ -49,6 +49,7 @@ impl Workspace {
         let Some((_, anchor)) = self.center_tab_location(source, cx) else {
             return;
         };
+        let selected = self.selected_center_tabs(cx);
         let opened = match source {
             CenterTab::Terminal(id) => {
                 let Some(panel) = self.terminals.get(&id) else {
@@ -87,14 +88,18 @@ impl Workspace {
                 );
             }
         });
-        // Adding the new tab may have selected it in the source group.
-        // Keep the original terminal visible when it leaves that group.
-        if let Some((group, anchor)) = self.center_tab_location(source, cx) {
+        // Adding a tab selects it in the first group, which may be a
+        // different group from the source. Restore each group's selection
+        // after the new tab has moved out.
+        for tab in selected {
+            let Some((group, panel)) = self.center_tab_location(tab, cx) else {
+                continue;
+            };
             group.update(cx, |group, cx| {
                 if let Some(ix) = group
                     .panels()
                     .iter()
-                    .position(|panel| panel.panel_id(cx) == anchor)
+                    .position(|candidate| candidate.panel_id(cx) == panel)
                 {
                     group.select_tab(ix, window, cx);
                 }
