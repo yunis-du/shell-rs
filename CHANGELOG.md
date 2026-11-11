@@ -4,6 +4,14 @@
 
 One section per version, titled `## [version]`, optionally followed by a date. Each section is written in English here and in Chinese in [CHANGELOG.zh.md](CHANGELOG.zh.md), in the same change. The release workflow (`.github/workflows/release.yml`) takes the section with the tag’s version, as it is, for the GitHub release. ShellRS opens the fork’s English or Chinese changelog on GitHub from What’s new. Written in Markdown, for users.
 
+## [0.1.20]
+
+### Improved
+
+- Terminal splits stay inside their own tab. Each tab remembers its layout and focused pane as you switch between tabs, and inactive panes dim.
+- Drag a pane by its title bar to move it without restarting the terminal. Hover over another terminal tab to switch to it, then move over a pane to preview which half will receive it.
+- The close shortcut closes the focused pane. The tab’s × closes all panes in that tab.
+
 ## [0.1.19]
 
 ShellRS was originally created by [Xuz](https://github.com/since2006). Yunis (@yunis-du) maintains this fork. Install it from [this fork’s GitHub Releases](https://github.com/yunis-du/shell-rs/releases) once to receive future updates from this repository.

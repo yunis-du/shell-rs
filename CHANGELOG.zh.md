@@ -4,6 +4,14 @@
 
 每个版本一节，标题写成 `## [版本号]`，可以在后面加日期。每一节同时写中文（这里）和英文（[CHANGELOG.md](CHANGELOG.md)），在同一次提交里。发布流程（`.github/workflows/release.yml`）把英文版里与 tag 同版本的那一节原样作为 GitHub Release 的说明；ShellRS 用「查看更新内容」打开 GitHub 上本分支对应语言的更新日志。用 Markdown 书写，面向使用者。
 
+## [0.1.20]
+
+### 改进
+
+- 终端分屏只改变当前标签页。切换标签页时，各自保留布局和上次聚焦的窗格；未聚焦的窗格会变灰。
+- 拖动窗格标题栏即可移动正在运行的终端。拖动时悬停在另一个终端标签页上会自动切过去，移到窗格内可预览放置位置。
+- 关闭快捷键关闭当前窗格，点击标签页上的 × 则关闭该标签页的所有窗格。
+
 ## [0.1.19]
 
 ShellRS 由 [Xuz](https://github.com/since2006) 创建，本分支由 Yunis（@yunis-du）维护。请先从[本分支的 GitHub Releases](https://github.com/yunis-du/shell-rs/releases)安装一次，后续版本会从这里更新。
